@@ -3,67 +3,12 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 const DEFAULT_N = 80;
 const MIN_N = 10;
 const MAX_N = 300;
-const STATES = { M: 0, D: 1, F: 2 };
+import { STATES, fibrilRunLength, computeEnergy, localEnergy } from "./model.js";
+
 const STATE_NAMES = ["Monomer", "Disordered", "Fibril"];
 const STATE_COLORS = ["#56B4E9", "#E69F00", "#CC79A7"];
 
 function initChain(n) { return new Array(n).fill(STATES.M); }
-
-// Length of the contiguous fibril run containing site i
-function fibrilRunLength(chain, i) {
-  if (chain[i] !== STATES.F) return 0;
-  const N = chain.length;
-  let lo = i, hi = i;
-  while (lo > 0 && chain[lo - 1] === STATES.F) lo--;
-  while (hi < N - 1 && chain[hi + 1] === STATES.F) hi++;
-  return hi - lo + 1;
-}
-
-function computeEnergy(chain, params) {
-  const { eM, eD, eF, jF, jFF, jD, minRun } = params;
-  const N = chain.length;
-  const baseE = [eM, eD, eF];
-  let E = 0;
-  for (let i = 0; i < N; i++) {
-    E += baseE[chain[i]];
-    if (chain[i] === STATES.F && fibrilRunLength(chain, i) >= minRun) {
-      // Short-range: direct neighbors
-      if (i > 0     && chain[i-1] === STATES.F && fibrilRunLength(chain, i-1) >= minRun) E -= jF / 2;
-      if (i < N - 1 && chain[i+1] === STATES.F && fibrilRunLength(chain, i+1) >= minRun) E -= jF / 2;
-      // Long-range: any other active fibril site (|d| > 1)
-      for (let j = 0; j < N; j++) {
-        if (Math.abs(j - i) > 1 && chain[j] === STATES.F && fibrilRunLength(chain, j) >= minRun) E -= jFF / 2;
-      }
-    }
-    if (chain[i] === STATES.D) {
-      if (i > 0     && chain[i-1] === STATES.D) E -= jD / 2;
-      if (i < N - 1 && chain[i+1] === STATES.D) E -= jD / 2;
-    }
-  }
-  return E;
-}
-
-// Local energy at idx (chain already contains the trial state)
-function localEnergy(chain, idx, params) {
-  const { eM, eD, eF, jF, jFF, jD, minRun } = params;
-  const N = chain.length;
-  const baseE = [eM, eD, eF];
-  let E = baseE[chain[idx]];
-  if (chain[idx] === STATES.F && fibrilRunLength(chain, idx) >= minRun) {
-    // Short-range: direct neighbors
-    if (idx > 0     && chain[idx-1] === STATES.F && fibrilRunLength(chain, idx-1) >= minRun) E -= jF;
-    if (idx < N - 1 && chain[idx+1] === STATES.F && fibrilRunLength(chain, idx+1) >= minRun) E -= jF;
-    // Long-range: any other active fibril site (|d| > 1)
-    for (let j = 0; j < N; j++) {
-      if (Math.abs(j - idx) > 1 && chain[j] === STATES.F && fibrilRunLength(chain, j) >= minRun) E -= jFF;
-    }
-  }
-  if (chain[idx] === STATES.D) {
-    if (idx > 0     && chain[idx-1] === STATES.D) E -= jD;
-    if (idx < N - 1 && chain[idx+1] === STATES.D) E -= jD;
-  }
-  return E;
-}
 
 function mcStep(chain, params, T, locked) {
   const N = chain.length;
