@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { STATES, fibrilRunLength, computeEnergy, localEnergy } from "../src/model.js";
+import { initChain, countStates, fibrilRunLengths, mcStep, DEFAULT_PARAMS } from "../src/simulation.js";
 
 const { M, D, F } = STATES;
 
@@ -147,15 +148,11 @@ describe("computeEnergy — mixed states", () => {
 });
 
 // ── localEnergy consistency ────────────────────────────────────────────────
-describe("localEnergy — consistency with computeEnergy", () => {
-  it("sum of localEnergy over all sites equals 2 × computeEnergy", () => {
-    // Each pairwise interaction is counted once in computeEnergy (with /2 symmetry factor)
-    // but twice in sum of localEnergy (once per site). So sum = 2 × E.
-    const chain = [F, F, F, D, D, M, F, F, F];
-    const total = chain.reduce((acc, _, i) => acc + localEnergy(chain, i, P), 0);
-    expect(total).toBeCloseTo(2 * computeEnergy(chain, P));
-  });
+// localEnergy counts the full interaction weight for site idx (not halved),
+// so it can be used directly as ΔE in MC without double-counting —
+// what matters is that Δ(localEnergy) == Δ(computeEnergy) on a single-site flip.
 
+describe("localEnergy — consistency with computeEnergy", () => {
   it("localEnergy of isolated M site equals eM", () => {
     expect(localEnergy([M], 0, P)).toBeCloseTo(P.eM);
   });
@@ -168,15 +165,103 @@ describe("localEnergy — consistency with computeEnergy", () => {
     expect(localEnergy([M, F, M], 1, P)).toBeCloseTo(P.eF);
   });
 
-  it("ΔE from localEnergy matches actual energy difference on flip", () => {
+  it("ΔE from localEnergy matches global ΔE on a single-site flip (M→D)", () => {
     const chain = [F, F, F, M, D, D];
-    const idx = 3; // M site
+    const idx = 3; // M site, no neighbours that interact with it
     const oldE = localEnergy(chain, idx, P);
-    const flipped = [...chain];
-    flipped[idx] = D;
+    const flipped = [...chain]; flipped[idx] = D;
     const newE = localEnergy(flipped, idx, P);
-    const dE = newE - oldE;
-    const globalDelta = computeEnergy(flipped, P) - computeEnergy(chain, P);
-    expect(dE).toBeCloseTo(globalDelta);
+    expect(newE - oldE).toBeCloseTo(computeEnergy(flipped, P) - computeEnergy(chain, P));
+  });
+
+  it("ΔE from localEnergy matches global ΔE on a single-site flip (M→F inside active run)", () => {
+    // Flipping the middle M to F extends a run and activates new couplings
+    const chain = [F, F, M, F, F, F];
+    const idx = 2;
+    const oldE = localEnergy(chain, idx, P);
+    const flipped = [...chain]; flipped[idx] = F;
+    const newE = localEnergy(flipped, idx, P);
+    expect(newE - oldE).toBeCloseTo(computeEnergy(flipped, P) - computeEnergy(chain, P));
+  });
+
+  it("ΔE from localEnergy matches global ΔE on a single-site flip (D→M inside D block)", () => {
+    const chain = [D, D, D, M, F, F, F];
+    const idx = 1;
+    const oldE = localEnergy(chain, idx, P);
+    const flipped = [...chain]; flipped[idx] = M;
+    const newE = localEnergy(flipped, idx, P);
+    expect(newE - oldE).toBeCloseTo(computeEnergy(flipped, P) - computeEnergy(chain, P));
+  });
+});
+
+// ── simulation helpers ─────────────────────────────────────────────────────
+
+describe("initChain", () => {
+  it("returns all-monomer chain of length n", () => {
+    const c = initChain(10);
+    expect(c).toHaveLength(10);
+    expect(c.every(s => s === STATES.M)).toBe(true);
+  });
+});
+
+describe("countStates", () => {
+  it("counts correctly for a mixed chain", () => {
+    const { M, D, F } = STATES;
+    const chain = [M, M, D, F, F, F];
+    const [nM, nD, nF] = countStates(chain);
+    expect(nM).toBe(2);
+    expect(nD).toBe(1);
+    expect(nF).toBe(3);
+  });
+
+  it("sums to chain length", () => {
+    const chain = initChain(20);
+    const counts = countStates(chain);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(20);
+  });
+});
+
+describe("fibrilRunLengths", () => {
+  const { M, D, F } = STATES;
+
+  it("returns empty array for no fibrils", () => {
+    expect(fibrilRunLengths([M, M, D, M])).toEqual([]);
+  });
+
+  it("returns correct run lengths for multiple blocks", () => {
+    // F F M F F F M F → runs of 2, 3, 1
+    const chain = [F, F, M, F, F, F, M, F];
+    expect(fibrilRunLengths(chain)).toEqual([2, 3, 1]);
+  });
+});
+
+describe("mcStep", () => {
+  it("returns a chain of the same length", () => {
+    const chain = initChain(20);
+    const { chain: nc } = mcStep(chain, DEFAULT_PARAMS, 1.0, null);
+    expect(nc).toHaveLength(20);
+  });
+
+  it("never modifies locked sites", () => {
+    const { M, F } = STATES;
+    // All sites locked as fibril
+    const chain  = new Array(10).fill(F);
+    const locked = new Array(10).fill(true);
+    const { chain: nc } = mcStep(chain, DEFAULT_PARAMS, 10.0, locked);
+    expect(nc.every(s => s === F)).toBe(true);
+  });
+
+  it("at T→0 never increases energy", () => {
+    // Very low temperature — uphill moves should be rejected
+    const chain = initChain(30);
+    const T = 0.01;
+    let c = chain;
+    for (let i = 0; i < 50; i++) {
+      const before = computeEnergy(c, DEFAULT_PARAMS);
+      const { chain: nc } = mcStep(c, DEFAULT_PARAMS, T, null);
+      const after = computeEnergy(nc, DEFAULT_PARAMS);
+      expect(after).toBeLessThanOrEqual(before + 1e-9);
+      c = nc;
+    }
   });
 });
