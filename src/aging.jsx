@@ -145,12 +145,17 @@ export default function App() {
   refs.irreversible.current = irreversible;
   refs.locked.current       = locked;
 
-  const animRef = useRef(null);
-  const stepRef = useRef(0);
+  const animRef       = useRef(null);
+  const stepRef       = useRef(0);
+  const trajectoryRef = useRef([]);  // full chain snapshots, unbounded
+  const [snapCount, setSnapCount] = useState(0);
 
   const pushHistory = useCallback((c, p, jm) => {
     const ct = countStates(c);
     const E  = computeEnergy(c, p, jm);
+    // record full snapshot in trajectory
+    trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
+    setSnapCount(trajectoryRef.current.length);
     setHistory(prev => {
       const trim = a => a.length >= MAX_HIST ? a.slice(1) : a;
       return {
@@ -188,6 +193,8 @@ export default function App() {
     setChain(c); setJMatrix(jm);
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
+    trajectoryRef.current = [];
+    setSnapCount(0);
     setHistory({ M: [], D: [], F: [], E: [] });
   };
 
@@ -199,6 +206,28 @@ export default function App() {
     stepRef.current += 1;
     setChain(nc); setStep(stepRef.current);
     pushHistory(nc, refs.params.current, refs.jMatrix.current);
+  };
+
+  const saveTrajectory = () => {
+    const payload = {
+      metadata: {
+        created: new Date().toISOString(),
+        software: "Fray",
+        n: chain.length,
+        totalSteps: stepRef.current,
+        snapshots: trajectoryRef.current.length,
+        params: { ...params, T, irreversible },
+        states: { 0: "Monomer", 1: "Disordered", 2: "Fibril" },
+      },
+      trajectory: trajectoryRef.current,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `fray_trajectory_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const counts = countStates(chain);
@@ -358,6 +387,7 @@ export default function App() {
                 bg: running ? "#7f1d1d" : "#1e3a5f", bdr: running ? "#ef4444" : "#3b82f6", col: running ? "#fca5a5" : "#93c5fd" },
               { label: "Step",  fn: doStep, bg: "#1a1f35", bdr: "#374151", col: "#94a3b8", dis: running },
               { label: "Reset", fn: reset,  bg: "#1a1f35", bdr: "#374151", col: "#94a3b8" },
+              { label: `Save (${snapCount})`, fn: saveTrajectory, bg: "#1a2a1a", bdr: "#4ade80", col: "#86efac", dis: snapCount === 0 },
             ].map(({ label, fn, bg, bdr, col, dis }) => (
               <button key={label} onClick={fn} disabled={dis} style={{
                 background: bg, border: `1px solid ${bdr}`, color: col,
@@ -463,7 +493,7 @@ export default function App() {
             <div style={{ color: "#7dd3fc" }}>H = Σᵢ εₛᵢ</div>
             <div style={{ color: "#f87171", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
             <div style={{ color: "#fb923c", marginLeft: 8 }}>− Σ|i−j|≤r J̃ᵢⱼ δ(D,D)</div>
-            <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|&gt;1 δ(F*,F*)</div>
+            <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|>1 δ(F*,F*)</div>
             <div style={{ marginTop: 8, borderTop: "1px solid #1e2d4a", paddingTop: 8, color: "#374151", fontSize: 9 }}>
               J̃ᵢⱼ ~ U[0, J_D max] — quenched, resampled on Reset
             </div>
