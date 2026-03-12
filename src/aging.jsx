@@ -463,7 +463,7 @@ export default function App() {
             <div style={{ color: "#7dd3fc" }}>H = Σᵢ εₛᵢ</div>
             <div style={{ color: "#f87171", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
             <div style={{ color: "#fb923c", marginLeft: 8 }}>− Σ|i−j|≤r J̃ᵢⱼ δ(D,D)</div>
-            <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|`&gt;`1 δ(F*,F*)</div>
+            <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|&gt;1 δ(F*,F*)</div>
             <div style={{ marginTop: 8, borderTop: "1px solid #1e2d4a", paddingTop: 8, color: "#374151", fontSize: 9 }}>
               J̃ᵢⱼ ~ U[0, J_D max] — quenched, resampled on Reset
             </div>
