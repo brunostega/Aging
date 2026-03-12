@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { STATES, fibrilRunLength, computeEnergy, localEnergy } from "./model.js";
+import { STATES, fibrilRunLength, computeEnergy, localEnergy } from "../src/model.js";
 
 const { M, D, F } = STATES;
 
