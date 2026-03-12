@@ -68,8 +68,8 @@ H = Σᵢ εₛᵢ
 You need [Node.js](https://nodejs.org) v18 or later.
 
 ```bash
-git clone https://github.com/yourname/fray.git
-cd fray
+git clone https://github.com/yourname/Aging.git
+cd Aging
 npm install
 npm run dev
 ```
@@ -107,12 +107,12 @@ After cloning, enable Pages in your repo settings under **Settings → Pages →
 ## Project structure
 
 ```
-fray/
+Aging/
 ├── .github/
 │   └── workflows/
 │       └── deploy.yml   # CI/CD to GitHub Pages
 ├── src/
-│   ├── fray.jsx         # simulation + UI
+│   ├── aging.jsx         # simulation + UI
 │   └── main.jsx         # React entry point
 ├── index.html
 ├── package.json
