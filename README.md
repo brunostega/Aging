@@ -6,7 +6,7 @@ Each site on a linear chain represents a protein monomer that can exist in one o
 
 ## Live Demo
 
-👉 [carlocamilloni.github.io/aging](https://carlocamilloni.github.io/aging)
+👉 [carlocamilloni.github.io/Aging](https://carlocamilloni.github.io/Aging)
 
 ---
 
