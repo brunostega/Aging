@@ -5,18 +5,6 @@ const STATES = { M: 0, D: 1, F: 2 };
 const STATE_NAMES = ["Monomer", "Disordered", "Fibril"];
 const STATE_COLORS = ["#4ade80", "#fb923c", "#f87171"];
 
-// Quenched disorder matrix: jMatrix[i][j] in [0,1], symmetric
-function buildJMatrix(n) {
-  const m = Array.from({ length: n }, () => new Float32Array(n));
-  for (let i = 0; i < n; i++)
-    for (let j = i + 1; j < n; j++) {
-      const v = Math.random();
-      m[i][j] = v;
-      m[j][i] = v;
-    }
-  return m;
-}
-
 function initChain(n) { return new Array(n).fill(STATES.M); }
 
 // Length of the contiguous fibril run containing site i
@@ -29,8 +17,8 @@ function fibrilRunLength(chain, i) {
   return hi - lo + 1;
 }
 
-function computeEnergy(chain, params, jMatrix) {
-  const { eM, eD, eF, jF, jFF, jD, rD, minRun } = params;
+function computeEnergy(chain, params) {
+  const { eM, eD, eF, jF, jFF, jD, minRun } = params;
   const N = chain.length;
   const baseE = [eM, eD, eF];
   let E = 0;
@@ -46,18 +34,16 @@ function computeEnergy(chain, params, jMatrix) {
       }
     }
     if (chain[i] === STATES.D) {
-      for (let d = 1; d <= rD; d++) {
-        if (i - d >= 0 && chain[i-d] === STATES.D) E -= (jD * jMatrix[i][i-d]) / 2;
-        if (i + d <  N && chain[i+d] === STATES.D) E -= (jD * jMatrix[i][i+d]) / 2;
-      }
+      if (i > 0     && chain[i-1] === STATES.D) E -= jD / 2;
+      if (i < N - 1 && chain[i+1] === STATES.D) E -= jD / 2;
     }
   }
   return E;
 }
 
 // Local energy at idx (chain already contains the trial state)
-function localEnergy(chain, idx, params, jMatrix) {
-  const { eM, eD, eF, jF, jFF, jD, rD, minRun } = params;
+function localEnergy(chain, idx, params) {
+  const { eM, eD, eF, jF, jFF, jD, minRun } = params;
   const N = chain.length;
   const baseE = [eM, eD, eF];
   let E = baseE[chain[idx]];
@@ -71,15 +57,13 @@ function localEnergy(chain, idx, params, jMatrix) {
     }
   }
   if (chain[idx] === STATES.D) {
-    for (let d = 1; d <= rD; d++) {
-      if (idx - d >= 0 && chain[idx-d] === STATES.D) E -= jD * jMatrix[idx][idx-d];
-      if (idx + d <  N && chain[idx+d] === STATES.D) E -= jD * jMatrix[idx][idx+d];
-    }
+    if (idx > 0     && chain[idx-1] === STATES.D) E -= jD;
+    if (idx < N - 1 && chain[idx+1] === STATES.D) E -= jD;
   }
   return E;
 }
 
-function mcStep(chain, params, T, jMatrix, locked) {
+function mcStep(chain, params, T, locked) {
   const N = chain.length;
   const c = [...chain];
   for (let _ = 0; _ < N; _++) {
@@ -88,9 +72,9 @@ function mcStep(chain, params, T, jMatrix, locked) {
     const oldState = c[idx];
     const newState = Math.floor(Math.random() * 3);
     if (newState === oldState) continue;
-    const oldE = localEnergy(c, idx, params, jMatrix);
+    const oldE = localEnergy(c, idx, params);
     c[idx] = newState;
-    const newE = localEnergy(c, idx, params, jMatrix);
+    const newE = localEnergy(c, idx, params);
     const dE = newE - oldE;
     if (dE > 0 && Math.random() >= Math.exp(-dE / T)) c[idx] = oldState;
   }
@@ -115,12 +99,11 @@ function countStates(chain) {
 }
 
 export default function App() {
-  const defaultParams = { eM: 0, eD: 1.5, eF: 3.0, jF: 2.5, jFF: 0.5, jD: 1.2, rD: 3, minRun: 3 };
+  const defaultParams = { eM: 0, eD: 1.5, eF: 3.0, jF: 2.5, jFF: 0.5, jD: 1.2, minRun: 3 };
   const [nMonomers, setNMonomers] = useState(DEFAULT_N);
   const [params, setParams]        = useState(defaultParams);
   const [T, setT]                = useState(1.0);
   const [chain, setChain]        = useState(() => initChain(DEFAULT_N));
-  const [jMatrix, setJMatrix]    = useState(() => buildJMatrix(DEFAULT_N));
   const [irreversible, setIrrev] = useState(false);
   const [locked, setLocked]      = useState(() => new Array(DEFAULT_N).fill(false));
   const [running, setRunning]    = useState(false);
@@ -133,7 +116,6 @@ export default function App() {
     params:       useRef(params),
     T:            useRef(T),
     running:      useRef(running),
-    jMatrix:      useRef(jMatrix),
     irreversible: useRef(irreversible),
     locked:       useRef(locked),
   };
@@ -141,7 +123,6 @@ export default function App() {
   refs.params.current       = params;
   refs.T.current            = T;
   refs.running.current      = running;
-  refs.jMatrix.current      = jMatrix;
   refs.irreversible.current = irreversible;
   refs.locked.current       = locked;
 
@@ -150,9 +131,9 @@ export default function App() {
   const trajectoryRef = useRef([]);  // full chain snapshots, unbounded
   const [snapCount, setSnapCount] = useState(0);
 
-  const pushHistory = useCallback((c, p, jm) => {
+  const pushHistory = useCallback((c, p) => {
     const ct = countStates(c);
-    const E  = computeEnergy(c, p, jm);
+    const E  = computeEnergy(c, p);
     // record full snapshot in trajectory
     trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
     setSnapCount(trajectoryRef.current.length);
@@ -170,12 +151,12 @@ export default function App() {
   const tick = useCallback(() => {
     if (!refs.running.current) return;
     const activeLocked = refs.irreversible.current ? refs.locked.current : null;
-    const { chain: nc, locked: nl } = mcStep(refs.chain.current, refs.params.current, refs.T.current, refs.jMatrix.current, activeLocked);
+    const { chain: nc, locked: nl } = mcStep(refs.chain.current, refs.params.current, refs.T.current, activeLocked);
     stepRef.current += 1;
     setChain(nc);
     if (refs.irreversible.current) setLocked(nl);
     setStep(stepRef.current);
-    pushHistory(nc, refs.params.current, refs.jMatrix.current);
+    pushHistory(nc, refs.params.current);
     animRef.current = requestAnimationFrame(tick);
   }, [pushHistory]);
 
@@ -189,8 +170,8 @@ export default function App() {
     const nn = n ?? nMonomers;
     setRunning(false);
     cancelAnimationFrame(animRef.current);
-    const c = initChain(nn), jm = buildJMatrix(nn);
-    setChain(c); setJMatrix(jm);
+    const c = initChain(nn);
+    setChain(c);
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
     trajectoryRef.current = [];
@@ -201,11 +182,11 @@ export default function App() {
   const doStep = () => {
     if (running) return;
     const activeLocked = irreversible ? refs.locked.current : null;
-    const { chain: nc, locked: nl } = mcStep(refs.chain.current, refs.params.current, refs.T.current, refs.jMatrix.current, activeLocked);
+    const { chain: nc, locked: nl } = mcStep(refs.chain.current, refs.params.current, refs.T.current, activeLocked);
     if (irreversible) setLocked(nl);
     stepRef.current += 1;
     setChain(nc); setStep(stepRef.current);
-    pushHistory(nc, refs.params.current, refs.jMatrix.current);
+    pushHistory(nc, refs.params.current);
   };
 
   const saveTrajectory = () => {
@@ -231,7 +212,7 @@ export default function App() {
   };
 
   const counts = countStates(chain);
-  const E = computeEnergy(chain, params, jMatrix);
+  const E = computeEnergy(chain, params);
 
   const fibrilRuns = useMemo(() => {
     const n = chain.length;
@@ -255,8 +236,7 @@ export default function App() {
     { key: "eD",     label: "E_Disordered",   min: -2, max: 6,  step: 0.1, col: STATE_COLORS[1], desc: "Intrinsic cost — disordered" },
     { key: "eF",     label: "E_Fibril",       min: -2, max: 8,  step: 0.1, col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
     { key: "jF",     label: "J_Fibril",       min: 0,  max: 8,  step: 0.1, col: "#f87171",       desc: "Fibril coupling (run≥minRun required)" },
-    { key: "jD",     label: "J_D max",        min: 0,  max: 4,  step: 0.1, col: "#fb923c",       desc: "Max disordered coupling (quenched)" },
-    { key: "rD",     label: "r_Disordered",   min: 1,  max: 10, step: 1,   col: "#fbbf24",       desc: "Range of D-D interactions" },
+    { key: "jD",     label: "J_Disordered",   min: 0,  max: 4,  step: 0.1, col: "#fb923c",       desc: "Disordered–disordered nearest-neighbour coupling" },
     { key: "minRun", label: "Min Fibril Run", min: 2,  max: 8,  step: 1,   col: "#c084fc",       desc: "Min run length to activate J_F" },
     { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 4, step: 0.05, col: "#38bdf8",   desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
   ];
@@ -291,7 +271,7 @@ export default function App() {
           1D Protein Aggregation — Ising Model
         </h1>
         <div style={{ fontSize: 10, color: "#475569", marginTop: 3 }}>
-          Quenched random D-D couplings &nbsp;·&nbsp; Cooperative fibril threshold &nbsp;·&nbsp; N={chain.length}
+          Nearest-neighbour D-D coupling &nbsp;·&nbsp; Cooperative fibril threshold &nbsp;·&nbsp; N={chain.length}
         </div>
       </div>
 
@@ -476,7 +456,7 @@ export default function App() {
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
                   <span style={{ fontSize: 11, color: col, fontWeight: 500 }}>{label}</span>
                   <span style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600 }}>
-                    {(key === "rD" || key === "minRun") ? params[key] : params[key].toFixed(1)}
+                    {key === "minRun" ? params[key] : params[key].toFixed(1)}
                   </span>
                 </div>
                 <input type="range" min={min} max={max} step={s} value={params[key]}
@@ -492,11 +472,9 @@ export default function App() {
             <div style={{ color: "#64748b", marginBottom: 4, letterSpacing: 1, textTransform: "uppercase", fontSize: 9 }}>Hamiltonian</div>
             <div style={{ color: "#7dd3fc" }}>H = Σᵢ εₛᵢ</div>
             <div style={{ color: "#f87171", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
-            <div style={{ color: "#fb923c", marginLeft: 8 }}>− Σ|i−j|≤r J̃ᵢⱼ δ(D,D)</div>
+            <div style={{ color: "#fb923c", marginLeft: 8 }}>− J_D Σ⟨i,j⟩ δ(D,D)</div>
             <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|>1 δ(F*,F*)</div>
-            <div style={{ marginTop: 8, borderTop: "1px solid #1e2d4a", paddingTop: 8, color: "#374151", fontSize: 9 }}>
-              J̃ᵢⱼ ~ U[0, J_D max] — quenched, resampled on Reset
-            </div>
+
           </div>
         </div>
       </div>
