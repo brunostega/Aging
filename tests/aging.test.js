@@ -88,10 +88,10 @@ describe("computeEnergy — fibril coupling", () => {
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
-  it("fibril run exactly minRun=3: short-range only, no long-range", () => {
-    // [F,F,F]: 2 nn pairs, 0 long-range pairs (all |d|≤1 or same site)
+  it("fibril run exactly minRun=3: 2 nn pairs + 1 long-range pair (0,2)", () => {
+    // [F,F,F]: nn pairs=(0,1),(1,2)=2; long-range |d|>1: (0,2)=1
     const chain = [F, F, F];
-    const expected = 3 * P.eF - 2 * P.jF;
+    const expected = 3 * P.eF - 2 * P.jF - 1 * P.jFF;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
@@ -131,16 +131,15 @@ describe("computeEnergy — fibril coupling", () => {
 // ── computeEnergy: mixed states ────────────────────────────────────────────
 describe("computeEnergy — mixed states", () => {
   it("[F,F,F,M,M] with minRun=3: only fibril block active", () => {
-    // fibril block [0,1,2]: run=3=minRun, nn pairs=2, long-range=(0,2)=1
-    // no D-D interactions
+    // fibril block [0,1,2]: run=3=minRun, nn pairs=2, long-range (0,2)=1
     const chain = [F, F, F, M, M];
     const expected = 3 * P.eF + 2 * P.eM - 2 * P.jF - 1 * P.jFF;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
   it("[M,D,D,F,F,F] with minRun=3: D-D and F-F interactions both active", () => {
-    // D sites: 1,2 → 1 D-D pair → −jD
-    // F sites: 3,4,5 → run=3, nn pairs=2 → −2×jF, long-range (3,5)=1 → −jFF
+    // D sites: 1,2 → 1 D-D nn pair → −jD
+    // F sites: 3,4,5 → run=3=minRun, nn pairs=2 → −2×jF, long-range (3,5)=1 → −jFF
     const chain = [M, D, D, F, F, F];
     const expected = P.eM + 2*P.eD + 3*P.eF - P.jD - 2*P.jF - P.jFF;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
