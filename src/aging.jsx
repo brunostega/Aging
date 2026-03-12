@@ -105,7 +105,8 @@ export default function App() {
   const [params, setParams]        = useState(defaultParams);
   const [T, setT]                = useState(1.0);
   const [chain, setChain]        = useState(() => initChain(DEFAULT_N));
-  const [irreversible, setIrrev] = useState(false);
+  const [irreversible, setIrrev]       = useState(false);
+  const [stopOnFibril, setStopOnFibril] = useState(true);
   const [locked, setLocked]      = useState(() => new Array(DEFAULT_N).fill(false));
   const [running, setRunning]    = useState(false);
   const [step, setStep]          = useState(0);
@@ -117,8 +118,9 @@ export default function App() {
     params:       useRef(params),
     T:            useRef(T),
     running:      useRef(running),
-    irreversible: useRef(irreversible),
-    locked:       useRef(locked),
+    irreversible:  useRef(irreversible),
+    locked:        useRef(locked),
+    stopOnFibril:  useRef(stopOnFibril),
   };
   refs.chain.current        = chain;
   refs.params.current       = params;
@@ -126,6 +128,7 @@ export default function App() {
   refs.running.current      = running;
   refs.irreversible.current = irreversible;
   refs.locked.current       = locked;
+  refs.stopOnFibril.current = stopOnFibril;
 
   const sizeRef = useRef(DEFAULT_N);  // single source of truth for chain length
   const inputRef = useRef(null);         // ref to the number input DOM element
@@ -160,6 +163,11 @@ export default function App() {
     if (refs.irreversible.current) setLocked(nl);
     setStep(stepRef.current);
     pushHistory(nc, refs.params.current);
+    if (refs.stopOnFibril.current && nc.every(s => s === STATES.F)) {
+      refs.running.current = false;
+      setRunning(false);
+      return;
+    }
     animRef.current = requestAnimationFrame(tick);
   }, [pushHistory]);
 
@@ -379,6 +387,27 @@ export default function App() {
                 opacity: dis ? 0.4 : 1,
               }}>{label}</button>
             ))}
+
+            {/* Stop on full fibril toggle */}
+            <button
+              onClick={() => setStopOnFibril(v => !v)}
+              title="Stop simulation when chain reaches 100% fibril"
+              style={{
+                background: stopOnFibril ? "#1a2a1a" : "#1a1f35",
+                border: `1px solid ${stopOnFibril ? "#56B4E9" : "#374151"}`,
+                color: stopOnFibril ? "#93d6f5" : "#64748b",
+                padding: "9px 14px", borderRadius: 6, cursor: "pointer",
+                fontFamily: "inherit", fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+              <span style={{
+                display: "inline-block", width: 10, height: 10, borderRadius: "50%",
+                background: stopOnFibril ? "#56B4E9" : "#374151",
+                boxShadow: stopOnFibril ? "0 0 6px #56B4E9" : "none",
+                flexShrink: 0,
+              }} />
+              Stop at 100% F
+            </button>
 
             {/* Irreversible fibril toggle */}
             <button
