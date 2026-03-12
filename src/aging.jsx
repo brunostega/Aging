@@ -1,71 +1,64 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  STATES, STATE_NAMES, STATE_COLORS,
+  DEFAULT_N, DEFAULT_PARAMS, MIN_N, MAX_N,
+  initChain, countStates, fibrilRunLengths, mcStep,
+} from "./simulation.js";
+import { computeEnergy, fibrilRunLength } from "./model.js";
 
-const DEFAULT_N = 80;
-const MIN_N = 10;
-const MAX_N = 300;
-import { STATES, fibrilRunLength, computeEnergy, localEnergy } from "./model.js";
+// ── Sparkline ───────────────────────────────────────────────────────────────
 
-const STATE_NAMES = ["Monomer", "Disordered", "Fibril"];
-const STATE_COLORS = ["#56B4E9", "#E69F00", "#CC79A7"];
-
-function initChain(n) { return new Array(n).fill(STATES.M); }
-
-function mcStep(chain, params, T, locked) {
-  const N = chain.length;
-  const c = [...chain];
-  for (let _ = 0; _ < N; _++) {
-    const idx = Math.floor(Math.random() * N);
-    if (locked && locked[idx]) continue;          // irreversible: skip locked sites
-    const oldState = c[idx];
-    const newState = Math.floor(Math.random() * 3);
-    if (newState === oldState) continue;
-    const oldE = localEnergy(c, idx, params);
-    c[idx] = newState;
-    const newE = localEnergy(c, idx, params);
-    const dE = newE - oldE;
-    if (dE > 0 && Math.random() >= Math.exp(-dE / T)) c[idx] = oldState;
-  }
-
-  // After the sweep, lock any newly active fibril sites
-  const newLocked = locked ? [...locked] : new Array(N).fill(false);
-  if (locked !== null) {
-    for (let i = 0; i < N; i++) {
-      if (!newLocked[i] && c[i] === STATES.F && fibrilRunLength(c, i) >= params.minRun) {
-        newLocked[i] = true;
-      }
-    }
-  }
-
-  return { chain: c, locked: newLocked };
+function Sparkline({ data, color, height = 38 }) {
+  if (data.length < 2) return <svg width="100%" height={height} />;
+  const w = 260, h = height;
+  const mn = Math.min(...data), mx = Math.max(...data), range = mx - mn || 1;
+  const pts = data
+    .map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - mn) / range) * (h - 6) - 3}`)
+    .join(" ");
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: "block" }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" opacity="0.85" />
+    </svg>
+  );
 }
 
-function countStates(chain) {
-  const counts = [0, 0, 0];
-  chain.forEach(s => counts[s]++);
-  return counts;
-}
+// ── Parameter slider config ─────────────────────────────────────────────────
+
+const PARAM_CONFIG = [
+  { key: "eM",     label: "E_Monomer",           min: 0, max: 8, step: 0.1, col: STATE_COLORS[0], desc: "Intrinsic cost — monomer" },
+  { key: "eD",     label: "E_Disordered",        min: 0, max: 8, step: 0.1, col: STATE_COLORS[1], desc: "Intrinsic cost — disordered" },
+  { key: "eF",     label: "E_Fibril",            min: 0, max: 8, step: 0.1, col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
+  { key: "jD",     label: "J_Disordered",        min: 0, max: 8, step: 0.1, col: "#E69F00",       desc: "Disordered–disordered nearest-neighbour coupling" },
+  { key: "jF",     label: "J_Fibril",            min: 0, max: 8, step: 0.1, col: "#CC79A7",       desc: "Fibril coupling (run≥minRun required)" },
+  { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 8, step: 0.1, col: "#38bdf8",       desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
+  { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,   col: "#c084fc",       desc: "Min run length to activate J_F" },
+];
+
+const MAX_HIST = 200;
+
+// ── App ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const defaultParams = { eM: 0, eD: 1.5, eF: 3.0, jF: 2.5, jFF: 0.5, jD: 1.2, minRun: 3 };
-  const [params, setParams]        = useState(defaultParams);
-  const [T, setT]                = useState(1.0);
-  const [chain, setChain]        = useState(() => initChain(DEFAULT_N));
-  const [irreversible, setIrrev]       = useState(false);
-  const [stopOnFibril, setStopOnFibril] = useState(true);
-  const [locked, setLocked]      = useState(() => new Array(DEFAULT_N).fill(false));
-  const [running, setRunning]    = useState(false);
-  const [step, setStep]          = useState(0);
-  const [history, setHistory]    = useState({ M: [], D: [], F: [], E: [] });
-  const MAX_HIST = 200;
+  const [params, setParams]               = useState(DEFAULT_PARAMS);
+  const [T, setT]                         = useState(1.0);
+  const [chain, setChain]                 = useState(() => initChain(DEFAULT_N));
+  const [irreversible, setIrrev]          = useState(false);
+  const [stopOnFibril, setStopOnFibril]   = useState(true);
+  const [locked, setLocked]               = useState(() => new Array(DEFAULT_N).fill(false));
+  const [running, setRunning]             = useState(false);
+  const [step, setStep]                   = useState(0);
+  const [history, setHistory]             = useState({ M: [], D: [], F: [], E: [] });
+  const [snapCount, setSnapCount]         = useState(0);
 
+  // Refs for values needed inside the rAF loop without stale closures
   const refs = {
     chain:        useRef(chain),
     params:       useRef(params),
     T:            useRef(T),
     running:      useRef(running),
-    irreversible:  useRef(irreversible),
-    locked:        useRef(locked),
-    stopOnFibril:  useRef(stopOnFibril),
+    irreversible: useRef(irreversible),
+    locked:       useRef(locked),
+    stopOnFibril: useRef(stopOnFibril),
   };
   refs.chain.current        = chain;
   refs.params.current       = params;
@@ -75,17 +68,18 @@ export default function App() {
   refs.locked.current       = locked;
   refs.stopOnFibril.current = stopOnFibril;
 
-  const sizeRef = useRef(DEFAULT_N);  // single source of truth for chain length
-  const inputRef = useRef(null);         // ref to the number input DOM element
-  const animRef       = useRef(null);
-  const stepRef       = useRef(0);
-  const trajectoryRef = useRef([]);  // full chain snapshots, unbounded
-  const [snapCount, setSnapCount] = useState(0);
+  // Single source of truth for chain length (uncontrolled input pattern)
+  const sizeRef        = useRef(DEFAULT_N);
+  const inputRef       = useRef(null);
+  const animRef        = useRef(null);
+  const stepRef        = useRef(0);
+  const trajectoryRef  = useRef([]);
+
+  // ── history / trajectory ──────────────────────────────────────────────────
 
   const pushHistory = useCallback((c, p) => {
     const ct = countStates(c);
     const E  = computeEnergy(c, p);
-    // record full snapshot in trajectory
     trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
     setSnapCount(trajectoryRef.current.length);
     setHistory(prev => {
@@ -99,10 +93,14 @@ export default function App() {
     });
   }, []);
 
+  // ── animation loop ────────────────────────────────────────────────────────
+
   const tick = useCallback(() => {
     if (!refs.running.current) return;
     const activeLocked = refs.irreversible.current ? refs.locked.current : null;
-    const { chain: nc, locked: nl } = mcStep(refs.chain.current, refs.params.current, refs.T.current, activeLocked);
+    const { chain: nc, locked: nl } = mcStep(
+      refs.chain.current, refs.params.current, refs.T.current, activeLocked,
+    );
     stepRef.current += 1;
     setChain(nc);
     if (refs.irreversible.current) setLocked(nl);
@@ -122,14 +120,17 @@ export default function App() {
     return () => cancelAnimationFrame(animRef.current);
   }, [running, tick]);
 
+  // ── reset ─────────────────────────────────────────────────────────────────
+
   const reset = (n) => {
-    const nn = (n !== undefined && !isNaN(n)) ? Math.max(MIN_N, Math.min(MAX_N, n)) : sizeRef.current;
+    const nn = (n !== undefined && !isNaN(n))
+      ? Math.max(MIN_N, Math.min(MAX_N, n))
+      : sizeRef.current;
     sizeRef.current = nn;
-    if (inputRef.current) inputRef.current.value = nn;  // sync input display directly
+    if (inputRef.current) inputRef.current.value = nn;
     setRunning(false);
     cancelAnimationFrame(animRef.current);
-    const c = initChain(nn);
-    setChain(c);
+    setChain(initChain(nn));
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
     trajectoryRef.current = [];
@@ -137,26 +138,33 @@ export default function App() {
     setHistory({ M: [], D: [], F: [], E: [] });
   };
 
+  // ── single step ───────────────────────────────────────────────────────────
+
   const doStep = () => {
     if (running) return;
     const activeLocked = irreversible ? refs.locked.current : null;
-    const { chain: nc, locked: nl } = mcStep(refs.chain.current, refs.params.current, refs.T.current, activeLocked);
+    const { chain: nc, locked: nl } = mcStep(
+      refs.chain.current, refs.params.current, refs.T.current, activeLocked,
+    );
     if (irreversible) setLocked(nl);
     stepRef.current += 1;
-    setChain(nc); setStep(stepRef.current);
+    setChain(nc);
+    setStep(stepRef.current);
     pushHistory(nc, refs.params.current);
   };
+
+  // ── trajectory export ─────────────────────────────────────────────────────
 
   const saveTrajectory = () => {
     const payload = {
       metadata: {
-        created: new Date().toISOString(),
-        software: "Aging",
-        n: chain.length,
+        created:    new Date().toISOString(),
+        software:   "Aging",
+        n:          chain.length,
         totalSteps: stepRef.current,
-        snapshots: trajectoryRef.current.length,
-        params: { ...params, T, irreversible },
-        states: { 0: "Monomer", 1: "Disordered", 2: "Fibril" },
+        snapshots:  trajectoryRef.current.length,
+        params:     { ...params, T, irreversible },
+        states:     { 0: "Monomer", 1: "Disordered", 2: "Fibril" },
       },
       trajectory: trajectoryRef.current,
     };
@@ -164,54 +172,26 @@ export default function App() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;
-    a.download = `fray_trajectory_${Date.now()}.json`;
+    a.download = `aging_trajectory_${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const counts = countStates(chain);
-  const E = computeEnergy(chain, params);
+  // ── derived display values ────────────────────────────────────────────────
 
-  const fibrilRuns = useMemo(() => {
-    const n = chain.length;
-    const runs = []; let i = 0;
-    while (i < n) {
-      if (chain[i] === STATES.F) {
-        let j = i; while (j < n && chain[j] === STATES.F) j++;
-        runs.push(j - i); i = j;
-      } else i++;
-    }
-    return runs;
-  }, [chain]);
-
+  const counts          = countStates(chain);
+  const E               = computeEnergy(chain, params);
+  const fibrilRuns      = useMemo(() => fibrilRunLengths(chain), [chain]);
   const activeFibrilCount = fibrilRuns.filter(r => r >= params.minRun).reduce((a, r) => a + r, 0);
   const activeFibrilFrac  = counts[2] > 0 ? activeFibrilCount / counts[2] : 0;
 
-  const paramConfig = [
-    { key: "eM",     label: "E_Monomer",           min: 0, max: 8, step: 0.1,  col: STATE_COLORS[0], desc: "Intrinsic cost — monomer" },
-    { key: "eD",     label: "E_Disordered",        min: 0, max: 8, step: 0.1,  col: STATE_COLORS[1], desc: "Intrinsic cost — disordered" },
-    { key: "eF",     label: "E_Fibril",            min: 0, max: 8, step: 0.1,  col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
-    { key: "jD",     label: "J_Disordered",        min: 0, max: 8, step: 0.1,  col: "#E69F00",       desc: "Disordered–disordered nearest-neighbour coupling" },
-    { key: "jF",     label: "J_Fibril",            min: 0, max: 8, step: 0.1,  col: "#CC79A7",       desc: "Fibril coupling (run≥minRun required)" },
-    { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 8, step: 0.1,  col: "#38bdf8",       desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
-    { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,    col: "#c084fc",       desc: "Min run length to activate J_F" },
-  ];
-
-  const Sparkline = ({ data, color, height = 38 }) => {
-    if (data.length < 2) return <svg width="100%" height={height} />;
-    const w = 260, h = height;
-    const mn = Math.min(...data), mx = Math.max(...data), range = mx - mn || 1;
-    const pts = data.map((v, i) => `${(i/(data.length-1))*w},${h - ((v-mn)/range)*(h-6) - 3}`).join(" ");
-    return (
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: "block" }}>
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" opacity="0.85" />
-      </svg>
-    );
-  };
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ background: "#0a0e1a", minHeight: "100vh", color: "#e2e8f0",
-      fontFamily: "'IBM Plex Mono','Courier New',monospace", padding: 24, boxSizing: "border-box" }}>
+    <div style={{
+      background: "#0a0e1a", minHeight: "100vh", color: "#e2e8f0",
+      fontFamily: "'IBM Plex Mono','Courier New',monospace", padding: 24, boxSizing: "border-box",
+    }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;600&display=swap');
         input[type=range]{cursor:pointer;width:100%}
@@ -219,6 +199,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb{background:#4a5568;border-radius:3px}
       `}</style>
 
+      {/* Header */}
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 10, letterSpacing: 4, color: "#7c3aed", textTransform: "uppercase", marginBottom: 3 }}>
           Monte Carlo · Metropolis Algorithm
@@ -255,7 +236,7 @@ export default function App() {
                     background: STATE_COLORS[s],
                     opacity: s === STATES.F ? (isActiveF ? 1 : 0.28) : 0.82,
                     boxShadow: isLocked
-                      ? `0 0 6px #a855f7, inset 0 0 3px #a855f744`
+                      ? "0 0 6px #a855f7, inset 0 0 3px #a855f744"
                       : isActiveF ? `0 0 5px ${STATE_COLORS[2]}99` : "none",
                     outline: isLocked ? "1px solid #a855f788" : "none",
                   }} />
@@ -285,11 +266,11 @@ export default function App() {
           {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 14 }}>
             {[
-              { label: "Monomer",    val: `${(counts[0]/chain.length*100).toFixed(0)}%`, col: STATE_COLORS[0] },
-              { label: "Disordered", val: `${(counts[1]/chain.length*100).toFixed(0)}%`, col: STATE_COLORS[1] },
-              { label: "Fibril",     val: `${(counts[2]/chain.length*100).toFixed(0)}%`, col: STATE_COLORS[2] },
-              { label: "Active F",   val: `${(activeFibrilFrac*100).toFixed(0)}%`, col: "#c084fc" },
-              { label: "Energy",     val: E.toFixed(1), col: "#818cf8" },
+              { label: "Monomer",    val: `${(counts[0] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[0] },
+              { label: "Disordered", val: `${(counts[1] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[1] },
+              { label: "Fibril",     val: `${(counts[2] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[2] },
+              { label: "Active F",   val: `${(activeFibrilFrac * 100).toFixed(0)}%`,          col: "#c084fc" },
+              { label: "Energy",     val: E.toFixed(1),                                        col: "#818cf8" },
             ].map(({ label, val, col }) => (
               <div key={label} style={{ background: "#111827", border: `1px solid ${col}33`, borderRadius: 8, padding: "8px 10px" }}>
                 <div style={{ fontSize: 9, color: "#64748b", textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
@@ -321,8 +302,8 @@ export default function App() {
             {[
               { label: running ? "⏸ Pause" : "▶ Run", fn: () => setRunning(r => !r),
                 bg: running ? "#7f1d1d" : "#1e3a5f", bdr: running ? "#ef4444" : "#3b82f6", col: running ? "#fca5a5" : "#93c5fd" },
-              { label: "Step",  fn: doStep, bg: "#1a1f35", bdr: "#374151", col: "#94a3b8", dis: running },
-              { label: "Reset", fn: reset,  bg: "#1a1f35", bdr: "#374151", col: "#94a3b8" },
+              { label: "Step",  fn: doStep,         bg: "#1a1f35", bdr: "#374151", col: "#94a3b8", dis: running },
+              { label: "Reset", fn: reset,          bg: "#1a1f35", bdr: "#374151", col: "#94a3b8" },
               { label: `Save (${snapCount})`, fn: saveTrajectory, bg: "#1a2a1a", bdr: "#56B4E9", col: "#93d6f5", dis: snapCount === 0 },
             ].map(({ label, fn, bg, bdr, col, dis }) => (
               <button key={label} onClick={fn} disabled={dis} style={{
@@ -379,9 +360,9 @@ export default function App() {
 
         {/* RIGHT */}
         <div>
-          {/* Chain Sites */}
+          {/* Chain Length */}
           <div style={{ background: "#111827", border: "1px solid #1e2d4a", borderRadius: 8, padding: 14, marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Chain Sites</div>
+            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Chain Length</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 ref={inputRef}
@@ -400,16 +381,13 @@ export default function App() {
                 style={{
                   background: "#0d1117", border: "1px solid #374151", color: "#e2e8f0",
                   borderRadius: 6, padding: "6px 10px", fontFamily: "inherit",
-                  fontSize: 18, fontWeight: 600, width: 80, textAlign: "center",
-                  outline: "none",
+                  fontSize: 18, fontWeight: 600, width: 80, textAlign: "center", outline: "none",
                 }}
               />
               <span style={{ fontSize: 10, color: "#475569" }}>sites<br/>(Enter to apply)</span>
             </div>
             <input type="range" min={MIN_N} max={MAX_N} step={5} defaultValue={DEFAULT_N}
-              onChange={e => {
-                if (inputRef.current) inputRef.current.value = e.target.value;
-              }}
+              onChange={e => { if (inputRef.current) inputRef.current.value = e.target.value; }}
               onMouseUp={e => reset(parseInt(e.target.value))}
               onTouchEnd={e => reset(parseInt(e.target.value))}
               style={{ accentColor: "#64748b", marginTop: 8 }} />
@@ -435,7 +413,7 @@ export default function App() {
           {/* Parameters */}
           <div style={{ background: "#111827", border: "1px solid #1e2d4a", borderRadius: 8, padding: 14 }}>
             <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>Parameters</div>
-            {paramConfig.map(({ key, label, min, max, step: s, col, desc }) => (
+            {PARAM_CONFIG.map(({ key, label, min, max, step: s, col, desc }) => (
               <div key={key} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
                   <span style={{ fontSize: 11, color: col, fontWeight: 500 }}>{label}</span>
@@ -458,9 +436,9 @@ export default function App() {
             <div style={{ color: "#CC79A7", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
             <div style={{ color: "#E69F00", marginLeft: 8 }}>− J_D Σ⟨i,j⟩ δ(D,D)</div>
             <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|>1 δ(F*,F*)</div>
-
           </div>
         </div>
+
       </div>
     </div>
   );
