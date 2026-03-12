@@ -5,7 +5,7 @@ const MIN_N = 10;
 const MAX_N = 300;
 const STATES = { M: 0, D: 1, F: 2 };
 const STATE_NAMES = ["Monomer", "Disordered", "Fibril"];
-const STATE_COLORS = ["#4ade80", "#fb923c", "#f87171"];
+const STATE_COLORS = ["#56B4E9", "#E69F00", "#CC79A7"];
 
 function initChain(n) { return new Array(n).fill(STATES.M); }
 
@@ -238,8 +238,8 @@ export default function App() {
     { key: "eM",     label: "E_Monomer",           min: 0, max: 8, step: 0.1,  col: STATE_COLORS[0], desc: "Intrinsic cost — monomer" },
     { key: "eD",     label: "E_Disordered",        min: 0, max: 8, step: 0.1,  col: STATE_COLORS[1], desc: "Intrinsic cost — disordered" },
     { key: "eF",     label: "E_Fibril",            min: 0, max: 8, step: 0.1,  col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
-    { key: "jD",     label: "J_Disordered",        min: 0, max: 8, step: 0.1,  col: "#fb923c",       desc: "Disordered–disordered nearest-neighbour coupling" },
-    { key: "jF",     label: "J_Fibril",            min: 0, max: 8, step: 0.1,  col: "#f87171",       desc: "Fibril coupling (run≥minRun required)" },
+    { key: "jD",     label: "J_Disordered",        min: 0, max: 8, step: 0.1,  col: "#E69F00",       desc: "Disordered–disordered nearest-neighbour coupling" },
+    { key: "jF",     label: "J_Fibril",            min: 0, max: 8, step: 0.1,  col: "#CC79A7",       desc: "Fibril coupling (run≥minRun required)" },
     { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 8, step: 0.1,  col: "#38bdf8",       desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
     { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,    col: "#c084fc",       desc: "Min run length to activate J_F" },
   ];
@@ -370,7 +370,7 @@ export default function App() {
                 bg: running ? "#7f1d1d" : "#1e3a5f", bdr: running ? "#ef4444" : "#3b82f6", col: running ? "#fca5a5" : "#93c5fd" },
               { label: "Step",  fn: doStep, bg: "#1a1f35", bdr: "#374151", col: "#94a3b8", dis: running },
               { label: "Reset", fn: reset,  bg: "#1a1f35", bdr: "#374151", col: "#94a3b8" },
-              { label: `Save (${snapCount})`, fn: saveTrajectory, bg: "#1a2a1a", bdr: "#4ade80", col: "#86efac", dis: snapCount === 0 },
+              { label: `Save (${snapCount})`, fn: saveTrajectory, bg: "#1a2a1a", bdr: "#56B4E9", col: "#93d6f5", dis: snapCount === 0 },
             ].map(({ label, fn, bg, bdr, col, dis }) => (
               <button key={label} onClick={fn} disabled={dis} style={{
                 background: bg, border: `1px solid ${bdr}`, color: col,
@@ -481,8 +481,8 @@ export default function App() {
           <div style={{ background: "#0d1117", border: "1px solid #1e2d4a", borderRadius: 8, padding: 12, marginTop: 14, fontSize: 10, lineHeight: 1.9 }}>
             <div style={{ color: "#64748b", marginBottom: 4, letterSpacing: 1, textTransform: "uppercase", fontSize: 9 }}>Hamiltonian</div>
             <div style={{ color: "#7dd3fc" }}>H = Σᵢ εₛᵢ</div>
-            <div style={{ color: "#f87171", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
-            <div style={{ color: "#fb923c", marginLeft: 8 }}>− J_D Σ⟨i,j⟩ δ(D,D)</div>
+            <div style={{ color: "#CC79A7", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
+            <div style={{ color: "#E69F00", marginLeft: 8 }}>− J_D Σ⟨i,j⟩ δ(D,D)</div>
             <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|>1 δ(F*,F*)</div>
 
           </div>

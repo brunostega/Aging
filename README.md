@@ -16,9 +16,9 @@ Each site on a linear chain represents a protein monomer that can exist in one o
 
 | State | Color | Description |
 |---|---|---|
-| Monomer (M) | 🟢 Green | Free, soluble protein — lowest intrinsic energy |
+| Monomer (M) | 🔵 Sky blue | Free, soluble protein — lowest intrinsic energy |
 | Disordered Oligomer (D) | 🟠 Orange | Loosely associated aggregate |
-| Fibril (F) | 🔴 Red | Ordered amyloid-like aggregate — highest intrinsic cost, stabilised by interactions |
+| Fibril (F) | 🩷 Pink-violet | Ordered amyloid-like aggregate — highest intrinsic cost, stabilised by interactions |
 
 ### Hamiltonian
 
