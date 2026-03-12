@@ -24,29 +24,31 @@ Each site on a linear chain represents a protein monomer that can exist in one o
 
 ```
 H = Σᵢ εₛᵢ
+  − J_D  Σ⟨i,j⟩    δ(D,D)
   − J_F  Σ⟨i,j⟩    δ(F,F)  · 𝟙[run ≥ minRun]
   − J_FF Σ|i−j|>1  δ(F*,F*)
-  − Σ|i−j|≤r  J̃ᵢⱼ δ(D,D)
 ```
 
 - **εₛ** — intrinsic energy of each state (ε_M < ε_D < ε_F by default)
-- **J_F** — short-range fibril coupling: direct neighbors only (|d| = 1), active only when both sites belong to a run of length ≥ `minRun`
+- **J_D** — disordered oligomer coupling: nearest neighbours only (|d| = 1)
+- **J_F** — short-range fibril coupling: nearest neighbours only (|d| = 1), active only when both sites belong to a run of length ≥ `minRun`
 - **J_FF** — long-range fibril coupling: between any two active fibril sites at |d| > 1
-- **J̃ᵢⱼ ~ U[0, J_D max]** — quenched random disordered-oligomer coupling, drawn once per pair at initialisation and fixed for the lifetime of the simulation
 
 ### Key features
 
 **Cooperative fibril nucleation** — fibril coupling is gated by a minimum run length (`minRun`). Isolated fibril sites gain no stabilisation energy, so nucleation requires building a critical seed before the fibril state becomes thermodynamically favourable. This mimics the nucleation barrier seen in amyloid formation.
 
-**Quenched disorder on oligomer contacts** — each pair of disordered sites has its own fixed random coupling strength, reflecting heterogeneous sequence-dependent interactions in real disordered aggregates. The disorder matrix is resampled on every Reset.
-
 **Irreversible fibril mode** — an optional toggle locks any fibril site once it joins an active run, preventing reversion. This captures the kinetic trapping of mature amyloid cores observed experimentally.
 
 **Long-range fibril templating** — `J_FF` allows spatially separated fibril clusters to attract each other across the full chain, modelling secondary nucleation and seeding effects.
 
+**Trajectory export** — the full chain state is recorded at every MC step and can be downloaded as a JSON file for further analysis.
+
 ---
 
 ## Parameters
+
+All energy and coupling parameters share the range **0–8**.
 
 | Parameter | Description |
 |---|---|
@@ -55,11 +57,36 @@ H = Σᵢ εₛᵢ
 | E_Monomer | Intrinsic energy of the monomer state |
 | E_Disordered | Intrinsic energy of the disordered oligomer state |
 | E_Fibril | Intrinsic energy of the fibril state |
-| J_Fibril | Short-range fibril–fibril coupling (nearest neighbors) |
-| J_Fibril long-range | Long-range fibril–fibril coupling (any distance) |
-| J_D max | Maximum disordered coupling strength (quenched random per pair) |
-| r_Disordered | Interaction range for disordered oligomers |
+| J_Disordered | Disordered–disordered nearest-neighbour coupling |
+| J_Fibril | Short-range fibril–fibril coupling (nearest neighbours, run ≥ minRun) |
+| J_Fibril long-range | Long-range fibril–fibril coupling (any distance, run ≥ minRun) |
 | Min Fibril Run | Minimum contiguous run length to activate fibril coupling |
+
+---
+
+## Trajectory export
+
+Clicking **Save (n)** downloads a JSON file containing every recorded snapshot:
+
+```json
+{
+  "metadata": {
+    "created": "2026-03-12T10:23:00.000Z",
+    "software": "Aging",
+    "n": 80,
+    "totalSteps": 342,
+    "snapshots": 342,
+    "params": { "eM": 0, "eD": 1.5, "eF": 3.0, "jD": 1.2, "jF": 2.5, "jFF": 0.5, "minRun": 3, "T": 1.0 },
+    "states": { "0": "Monomer", "1": "Disordered", "2": "Fibril" }
+  },
+  "trajectory": [
+    { "step": 1, "chain": [0, 0, 2, 0, 1, ...], "E": 12.4 },
+    { "step": 2, "chain": [0, 1, 2, 0, 1, ...], "E": 11.1 }
+  ]
+}
+```
+
+Each entry in `trajectory` contains the step index, the full chain as an array of integers (0 = Monomer, 1 = Disordered, 2 = Fibril), and the total energy. The buffer is cleared on Reset.
 
 ---
 
