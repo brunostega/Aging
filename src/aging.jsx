@@ -232,13 +232,13 @@ export default function App() {
   const nField = { val: nMonomers, setVal: (v) => { setNMonomers(v); reset(v); } };
 
   const paramConfig = [
-    { key: "eM",     label: "E_Monomer",      min: -2, max: 4,  step: 0.1, col: STATE_COLORS[0], desc: "Intrinsic cost — monomer" },
-    { key: "eD",     label: "E_Disordered",   min: -2, max: 6,  step: 0.1, col: STATE_COLORS[1], desc: "Intrinsic cost — disordered" },
-    { key: "eF",     label: "E_Fibril",       min: -2, max: 8,  step: 0.1, col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
-    { key: "jF",     label: "J_Fibril",       min: 0,  max: 8,  step: 0.1, col: "#f87171",       desc: "Fibril coupling (run≥minRun required)" },
-    { key: "jD",     label: "J_Disordered",   min: 0,  max: 4,  step: 0.1, col: "#fb923c",       desc: "Disordered–disordered nearest-neighbour coupling" },
-    { key: "minRun", label: "Min Fibril Run", min: 2,  max: 8,  step: 1,   col: "#c084fc",       desc: "Min run length to activate J_F" },
-    { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 4, step: 0.05, col: "#38bdf8",   desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
+    { key: "eM",     label: "E_Monomer",           min: 0, max: 8, step: 0.1,  col: STATE_COLORS[0], desc: "Intrinsic cost — monomer" },
+    { key: "eD",     label: "E_Disordered",        min: 0, max: 8, step: 0.1,  col: STATE_COLORS[1], desc: "Intrinsic cost — disordered" },
+    { key: "eF",     label: "E_Fibril",            min: 0, max: 8, step: 0.1,  col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
+    { key: "jD",     label: "J_Disordered",        min: 0, max: 8, step: 0.1,  col: "#fb923c",       desc: "Disordered–disordered nearest-neighbour coupling" },
+    { key: "jF",     label: "J_Fibril",            min: 0, max: 8, step: 0.1,  col: "#f87171",       desc: "Fibril coupling (run≥minRun required)" },
+    { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 8, step: 0.1,  col: "#38bdf8",       desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
+    { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,    col: "#c084fc",       desc: "Min run length to activate J_F" },
   ];
 
   const Sparkline = ({ data, color, height = 38 }) => {
