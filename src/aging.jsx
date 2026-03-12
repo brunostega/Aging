@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 const DEFAULT_N = 80;
+const MIN_N = 10;
+const MAX_N = 300;
 const STATES = { M: 0, D: 1, F: 2 };
 const STATE_NAMES = ["Monomer", "Disordered", "Fibril"];
 const STATE_COLORS = ["#4ade80", "#fb923c", "#f87171"];
@@ -100,7 +102,6 @@ function countStates(chain) {
 
 export default function App() {
   const defaultParams = { eM: 0, eD: 1.5, eF: 3.0, jF: 2.5, jFF: 0.5, jD: 1.2, minRun: 3 };
-  const [nMonomers, setNMonomers] = useState(DEFAULT_N);
   const [params, setParams]        = useState(defaultParams);
   const [T, setT]                = useState(1.0);
   const [chain, setChain]        = useState(() => initChain(DEFAULT_N));
@@ -126,6 +127,8 @@ export default function App() {
   refs.irreversible.current = irreversible;
   refs.locked.current       = locked;
 
+  const sizeRef = useRef(DEFAULT_N);  // single source of truth for chain length
+  const inputRef = useRef(null);         // ref to the number input DOM element
   const animRef       = useRef(null);
   const stepRef       = useRef(0);
   const trajectoryRef = useRef([]);  // full chain snapshots, unbounded
@@ -167,7 +170,9 @@ export default function App() {
   }, [running, tick]);
 
   const reset = (n) => {
-    const nn = n ?? nMonomers;
+    const nn = (n !== undefined && !isNaN(n)) ? Math.max(MIN_N, Math.min(MAX_N, n)) : sizeRef.current;
+    sizeRef.current = nn;
+    if (inputRef.current) inputRef.current.value = nn;  // sync input display directly
     setRunning(false);
     cancelAnimationFrame(animRef.current);
     const c = initChain(nn);
@@ -193,7 +198,7 @@ export default function App() {
     const payload = {
       metadata: {
         created: new Date().toISOString(),
-        software: "Fray",
+        software: "Aging",
         n: chain.length,
         totalSteps: stepRef.current,
         snapshots: trajectoryRef.current.length,
@@ -228,8 +233,6 @@ export default function App() {
 
   const activeFibrilCount = fibrilRuns.filter(r => r >= params.minRun).reduce((a, r) => a + r, 0);
   const activeFibrilFrac  = counts[2] > 0 ? activeFibrilCount / counts[2] : 0;
-
-  const nField = { val: nMonomers, setVal: (v) => { setNMonomers(v); reset(v); } };
 
   const paramConfig = [
     { key: "eM",     label: "E_Monomer",           min: 0, max: 8, step: 0.1,  col: STATE_COLORS[0], desc: "Intrinsic cost — monomer" },
@@ -402,19 +405,24 @@ export default function App() {
 
         {/* RIGHT */}
         <div>
-          {/* N Monomers */}
+          {/* Chain Sites */}
           <div style={{ background: "#111827", border: "1px solid #1e2d4a", borderRadius: 8, padding: 14, marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Chain Length</div>
+            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Chain Sites</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
-                type="number" min={10} max={300} step={1}
-                value={nMonomers}
-                onChange={e => {
-                  const v = Math.max(10, Math.min(300, parseInt(e.target.value) || DEFAULT_N));
-                  setNMonomers(v);
+                ref={inputRef}
+                type="number" min={MIN_N} max={MAX_N} step={1}
+                defaultValue={DEFAULT_N}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    const v = parseInt(e.target.value);
+                    reset(isNaN(v) ? sizeRef.current : v);
+                    e.target.blur();
+                  } else if (e.key === "Escape") {
+                    e.target.value = sizeRef.current;
+                    e.target.blur();
+                  }
                 }}
-                onBlur={() => reset(nMonomers)}
-                onKeyDown={e => { if (e.key === "Enter") reset(nMonomers); }}
                 style={{
                   background: "#0d1117", border: "1px solid #374151", color: "#e2e8f0",
                   borderRadius: 6, padding: "6px 10px", fontFamily: "inherit",
@@ -422,15 +430,17 @@ export default function App() {
                   outline: "none",
                 }}
               />
-              <span style={{ fontSize: 10, color: "#475569" }}>monomers<br/>(Enter or blur to apply)</span>
+              <span style={{ fontSize: 10, color: "#475569" }}>sites<br/>(Enter to apply)</span>
             </div>
-            <input type="range" min={10} max={300} step={5} value={nMonomers}
-              onChange={e => setNMonomers(parseInt(e.target.value))}
+            <input type="range" min={MIN_N} max={MAX_N} step={5} defaultValue={DEFAULT_N}
+              onChange={e => {
+                if (inputRef.current) inputRef.current.value = e.target.value;
+              }}
               onMouseUp={e => reset(parseInt(e.target.value))}
               onTouchEnd={e => reset(parseInt(e.target.value))}
               style={{ accentColor: "#64748b", marginTop: 8 }} />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#374151", marginTop: 2 }}>
-              <span>10</span><span>300</span>
+              <span>{MIN_N}</span><span>{MAX_N}</span>
             </div>
           </div>
 
