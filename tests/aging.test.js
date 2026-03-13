@@ -136,6 +136,7 @@ describe("computeEnergy — mixed states", () => {
 });
 
 
+describe("computeEnergy — hFF background field", () => {
   it("hFF does not fire when no active run exists", () => {
     // [F,F,M,F]: runs of 2 and 1, minRun=3 — no active run, no hFF
     const chain = [F, F, M, F];
@@ -151,7 +152,6 @@ describe("computeEnergy — mixed states", () => {
     const expected = 5 * P.eF + P.eM - 2 * P.jF - P.hFF * 5;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
-
 });
 
 // ── simulation helpers ─────────────────────────────────────────────────────
