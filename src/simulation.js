@@ -43,9 +43,13 @@ export function fibrilRunLengths(chain) {
   return runs;
 }
 
-export function mcStep(chain, params, T, locked) {
+// mcStep accepts the current global energy and returns the updated energy.
+// This avoids recomputing energy from scratch every step while keeping
+// the acceptance criterion exact (no locality assumption).
+export function mcStep(chain, params, T, locked, currentE) {
   const N = chain.length;
   const c = [...chain];
+  let E = currentE;
 
   for (let _ = 0; _ < N; _++) {
     const idx = Math.floor(Math.random() * N);
@@ -53,13 +57,14 @@ export function mcStep(chain, params, T, locked) {
     const oldState = c[idx];
     const newState = Math.floor(Math.random() * 3);
     if (newState === oldState) continue;
-    //const oldE = localEnergy(c, idx, params);
-    const oldE = computeEnergy(c, params);
     c[idx] = newState;
-    //const newE = localEnergy(c, idx, params);
     const newE = computeEnergy(c, params);
-    const dE = newE - oldE;
-    if (dE > 0 && Math.random() >= Math.exp(-dE / T)) c[idx] = oldState;
+    const dE = newE - E;
+    if (dE > 0 && Math.random() >= Math.exp(-dE / T)) {
+      c[idx] = oldState; // reject — restore old state, energy unchanged
+    } else {
+      E = newE;          // accept — update cached energy
+    }
   }
 
   // Lock any newly active fibril sites when irreversible mode is on
@@ -72,5 +77,5 @@ export function mcStep(chain, params, T, locked) {
     }
   }
 
-  return { chain: c, locked: newLocked };
+  return { chain: c, locked: newLocked, E };
 }

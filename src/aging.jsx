@@ -74,6 +74,7 @@ export default function App() {
   const animRef        = useRef(null);
   const stepRef        = useRef(0);
   const trajectoryRef  = useRef([]);
+  const energyRef      = useRef(computeEnergy(initChain(DEFAULT_N), DEFAULT_PARAMS));
 
   // ── history / trajectory ──────────────────────────────────────────────────
 
@@ -98,9 +99,10 @@ export default function App() {
   const tick = useCallback(() => {
     if (!refs.running.current) return;
     const activeLocked = refs.irreversible.current ? refs.locked.current : null;
-    const { chain: nc, locked: nl } = mcStep(
-      refs.chain.current, refs.params.current, refs.T.current, activeLocked,
+    const { chain: nc, locked: nl, E: newE } = mcStep(
+      refs.chain.current, refs.params.current, refs.T.current, activeLocked, energyRef.current,
     );
+    energyRef.current = newE;
     stepRef.current += 1;
     setChain(nc);
     if (refs.irreversible.current) setLocked(nl);
@@ -120,6 +122,11 @@ export default function App() {
     return () => cancelAnimationFrame(animRef.current);
   }, [running, tick]);
 
+  // When params change outside the loop, resync the cached energy
+  useEffect(() => {
+    energyRef.current = computeEnergy(refs.chain.current, params);
+  }, [params]);
+
   // ── reset ─────────────────────────────────────────────────────────────────
 
   const reset = (n) => {
@@ -130,7 +137,9 @@ export default function App() {
     if (inputRef.current) inputRef.current.value = nn;
     setRunning(false);
     cancelAnimationFrame(animRef.current);
-    setChain(initChain(nn));
+    const freshChain = initChain(nn);
+    energyRef.current = computeEnergy(freshChain, params);
+    setChain(freshChain);
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
     trajectoryRef.current = [];
@@ -143,9 +152,10 @@ export default function App() {
   const doStep = () => {
     if (running) return;
     const activeLocked = irreversible ? refs.locked.current : null;
-    const { chain: nc, locked: nl } = mcStep(
-      refs.chain.current, refs.params.current, refs.T.current, activeLocked,
+    const { chain: nc, locked: nl, E: newE } = mcStep(
+      refs.chain.current, refs.params.current, refs.T.current, activeLocked, energyRef.current,
     );
+    energyRef.current = newE;
     if (irreversible) setLocked(nl);
     stepRef.current += 1;
     setChain(nc);
