@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   STATES, STATE_NAMES, STATE_COLORS,
   DEFAULT_N, DEFAULT_PARAMS, MIN_N, MAX_N,
-  initChain, countStates, fibrilRunLengths, mcStep,
+  initChain, parseChain, countStates, fibrilRunLengths, mcStep,
 } from "./simulation.js";
 import { computeEnergy, fibrilRunLength } from "./model.js";
 
@@ -49,6 +49,8 @@ export default function App() {
   const [step, setStep]                   = useState(0);
   const [history, setHistory]             = useState({ M: [], D: [], F: [], E: [] });
   const [snapCount, setSnapCount]         = useState(0);
+  const [seqInput, setSeqInput]           = useState("");
+  const [seqError, setSeqError]           = useState(null);
 
   // Refs for values needed inside the rAF loop without stale closures
   const refs = {
@@ -138,6 +140,27 @@ export default function App() {
     setRunning(false);
     cancelAnimationFrame(animRef.current);
     const freshChain = initChain(nn);
+    energyRef.current = computeEnergy(freshChain, params);
+    setChain(freshChain);
+    setLocked(new Array(nn).fill(false));
+    stepRef.current = 0; setStep(0);
+    trajectoryRef.current = [];
+    setSnapCount(0);
+    setHistory({ M: [], D: [], F: [], E: [] });
+  };
+
+  // ── sequence apply ───────────────────────────────────────────────────────
+
+  const applySequence = () => {
+    const { chain: parsed, error } = parseChain(seqInput);
+    if (error) { setSeqError(error); return; }
+    setSeqError(null);
+    const nn = parsed.length;
+    sizeRef.current = nn;
+    if (inputRef.current) inputRef.current.value = nn;
+    setRunning(false);
+    cancelAnimationFrame(animRef.current);
+    const freshChain = parsed;
     energyRef.current = computeEnergy(freshChain, params);
     setChain(freshChain);
     setLocked(new Array(nn).fill(false));
@@ -404,6 +427,39 @@ export default function App() {
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#374151", marginTop: 2 }}>
               <span>{MIN_N}</span><span>{MAX_N}</span>
             </div>
+          </div>
+
+          {/* Sequence input */}
+          <div style={{ background: "#111827", border: `1px solid ${seqError ? "#ef444466" : "#1e2d4a"}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>
+              Starting conformation
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="text"
+                value={seqInput}
+                onChange={e => { setSeqInput(e.target.value); setSeqError(null); }}
+                onKeyDown={e => { if (e.key === "Enter") applySequence(); }}
+                placeholder="e.g. MMMFFFDDD"
+                spellCheck={false}
+                style={{
+                  flex: 1, background: "#0d1117", border: `1px solid ${seqError ? "#ef4444" : "#374151"}`,
+                  color: "#e2e8f0", borderRadius: 6, padding: "6px 8px",
+                  fontFamily: "inherit", fontSize: 11, outline: "none",
+                  letterSpacing: 1, textTransform: "uppercase",
+                }}
+              />
+              <button onClick={applySequence} style={{
+                background: "#1a1f35", border: "1px solid #374151", color: "#94a3b8",
+                borderRadius: 6, padding: "6px 12px", cursor: "pointer",
+                fontFamily: "inherit", fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
+                flexShrink: 0,
+              }}>Apply</button>
+            </div>
+            {seqError
+              ? <div style={{ fontSize: 9, color: "#f87171", marginTop: 5 }}>{seqError}</div>
+              : <div style={{ fontSize: 9, color: "#374151", marginTop: 5 }}>M · D · F — Enter or Apply</div>
+            }
           </div>
 
           {/* Temperature */}
