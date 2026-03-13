@@ -53,9 +53,11 @@ export function mcStep(chain, params, T, locked) {
     const oldState = c[idx];
     const newState = Math.floor(Math.random() * 3);
     if (newState === oldState) continue;
-    const oldE = localEnergy(c, idx, params);
+    //const oldE = localEnergy(c, idx, params);
+    const oldE = computeEnergy(c, params);
     c[idx] = newState;
-    const newE = localEnergy(c, idx, params);
+    //const newE = localEnergy(c, idx, params);
+    const newE = computeEnergy(c, params);
     const dE = newE - oldE;
     if (dE > 0 && Math.random() >= Math.exp(-dE / T)) c[idx] = oldState;
   }
