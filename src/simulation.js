@@ -1,7 +1,7 @@
 // Simulation logic — MC step, state helpers, chain initialisation.
 // No React dependencies.
 
-import { STATES, fibrilRunLength, computeEnergy } from "./model.js";
+import { STATES, computeEnergy, fibrilRunLength } from "./model.js";
 
 export { STATES };
 
@@ -13,7 +13,7 @@ export const STATE_NAMES  = ["Monomer", "Disordered", "Fibril"];
 export const STATE_COLORS = ["#56B4E9", "#E69F00", "#CC79A7"];
 
 export const DEFAULT_PARAMS = {
-  eM: 0, eD: 1.5, eF: 3.0, jF: 2.5, jFF: 0.5, jD: 1.2, minRun: 3,
+  eM: 0, eD: 1.5, eF: 3.0, jF: 2.5, hFF: 0.5, jD: 1.2, minRun: 3,
 };
 
 export function initChain(n) {

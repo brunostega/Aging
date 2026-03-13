@@ -5,7 +5,7 @@ import { initChain, countStates, fibrilRunLengths, mcStep, DEFAULT_PARAMS } from
 const { M, D, F } = STATES;
 
 // ── shared parameter set ────────────────────────────────────────────────────
-const P = { eM: 1, eD: 2, eF: 4, jF: 3, jFF: 1, jD: 2, minRun: 3 };
+const P = { eM: 1, eD: 2, eF: 4, jF: 3, hFF: 1, jD: 2, minRun: 3 };
 
 // ── fibrilRunLength ─────────────────────────────────────────────────────────
 describe("fibrilRunLength", () => {
@@ -81,62 +81,78 @@ describe("computeEnergy — disordered coupling", () => {
 
 // ── computeEnergy: fibril coupling ─────────────────────────────────────────
 describe("computeEnergy — fibril coupling", () => {
-  it("fibril run < minRun: no coupling applied", () => {
-    // run of 2, minRun=3 → only intrinsic energy
+  it("fibril run < minRun: no coupling, no hFF (no active run)", () => {
+    // run of 2, minRun=3 → no active run exists, no jF, no hFF
     const chain = [F, F];
     const expected = 2 * P.eF;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
-  it("fibril run exactly minRun=3: 2 nn pairs, jFF=0 (single run)", () => {
-    // [F,F,F]: single run — jFF only couples DIFFERENT runs, so no long-range term
+  it("fibril run exactly minRun=3: 2 nn pairs + hFF background on all 3 F sites", () => {
+    // [F,F,F]: hasActive=true, nF=3 → −hFF×3
     const chain = [F, F, F];
-    const expected = 3 * P.eF - 2 * P.jF;
+    const expected = 3 * P.eF - 2 * P.jF - P.hFF * 3;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
-  it("fibril run of 4: 3 nn pairs, jFF=0 (single run)", () => {
-    // [F,F,F,F]: single run — jFF only couples DIFFERENT runs
+  it("fibril run of 4: 3 nn pairs + hFF background on all 4 F sites", () => {
+    // [F,F,F,F]: hasActive=true, nF=4
     const chain = [F, F, F, F];
-    const expected = 4 * P.eF - 3 * P.jF;
+    const expected = 4 * P.eF - 3 * P.jF - P.hFF * 4;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
-  it("fibril run of 5: 4 nn pairs, jFF=0 (single run)", () => {
-    // [F,F,F,F,F]: single run — jFF only couples DIFFERENT runs
+  it("fibril run of 5: 4 nn pairs + hFF background on all 5 F sites", () => {
+    // [F,F,F,F,F]: hasActive=true, nF=5
     const chain = [F, F, F, F, F];
-    const expected = 5 * P.eF - 4 * P.jF;
+    const expected = 5 * P.eF - 4 * P.jF - P.hFF * 5;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
-  it("two separate active fibril runs interact via jFF (cross-run only)", () => {
-    // [F,F,F,M,F,F,F]: run1=sites 0,1,2  run2=sites 4,5,6
-    // nn within each run: (0,1),(1,2),(4,5),(5,6) = 4 × jF
-    // jFF: only cross-run pairs = 3×3 = 9 pairs
+  it("two active runs: nn jF within each run + hFF background on all 6 F sites", () => {
+    // [F,F,F,M,F,F,F]: run1=0,1,2  run2=4,5,6  nF=6
+    // nn: (0,1),(1,2),(4,5),(5,6) = 4×jF; hFF acts on all 6 F sites
     const chain = [F, F, F, M, F, F, F];
-    const expected = 6 * P.eF + P.eM - 4 * P.jF - 9 * P.jFF;
+    const expected = 6 * P.eF + P.eM - 4 * P.jF - P.hFF * 6;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 });
 
 // ── computeEnergy: mixed states ────────────────────────────────────────────
 describe("computeEnergy — mixed states", () => {
-  it("[F,F,F,M,M] with minRun=3: only fibril block active, jFF=0 (single run)", () => {
-    // fibril block [0,1,2]: single run — no jFF
+  it("[F,F,F,M,M] with minRun=3: active run, hFF on all 3 F sites", () => {
+    // fibril block [0,1,2]: active, nF=3
     const chain = [F, F, F, M, M];
-    const expected = 3 * P.eF + 2 * P.eM - 2 * P.jF;
+    const expected = 3 * P.eF + 2 * P.eM - 2 * P.jF - P.hFF * 3;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
-  it("[M,D,D,F,F,F] with minRun=3: D-D and F-F interactions both active, jFF=0 (single run)", () => {
-    // D sites: 1,2 → 1 D-D nn pair → −jD
-    // F sites: 3,4,5 → single run, nn pairs=2 → −2×jF, no jFF
+  it("[M,D,D,F,F,F] with minRun=3: D-D, F-F nn, and hFF background", () => {
+    // D: 1 nn pair → −jD; F: run=3, nn=2 → −2×jF; hFF on 3 F sites
     const chain = [M, D, D, F, F, F];
-    const expected = P.eM + 2*P.eD + 3*P.eF - P.jD - 2*P.jF;
+    const expected = P.eM + 2*P.eD + 3*P.eF - P.jD - 2*P.jF - P.hFF * 3;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 });
 
+
+  it("hFF does not fire when no active run exists", () => {
+    // [F,F,M,F]: runs of 2 and 1, minRun=3 — no active run, no hFF
+    const chain = [F, F, M, F];
+    const expected = 4 * P.eF + P.eM;
+    expect(computeEnergy(chain, P)).toBeCloseTo(expected);
+  });
+
+  it("hFF fires on ALL F sites including sub-threshold ones once an active run exists", () => {
+    // [F,F,F,M,F,F]: run1=3 (active), run2=2 (sub-threshold), nF=5
+    // nn within run1: (0,1),(1,2)=2×jF; no nn in run2 (below minRun, no jF)
+    // hFF acts on all 5 F sites
+    const chain = [F, F, F, M, F, F];
+    const expected = 5 * P.eF + P.eM - 2 * P.jF - P.hFF * 5;
+    expect(computeEnergy(chain, P)).toBeCloseTo(expected);
+  });
+
+});
 
 // ── simulation helpers ─────────────────────────────────────────────────────
 

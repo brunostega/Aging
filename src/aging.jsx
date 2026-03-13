@@ -30,7 +30,7 @@ const PARAM_CONFIG = [
   { key: "eF",     label: "E_Fibril",            min: 0, max: 8, step: 0.1, col: STATE_COLORS[2], desc: "Intrinsic cost — fibril" },
   { key: "jD",     label: "J_Disordered",        min: 0, max: 8, step: 0.1, col: "#E69F00",       desc: "Disordered–disordered nearest-neighbour coupling" },
   { key: "jF",     label: "J_Fibril",            min: 0, max: 8, step: 0.1, col: "#CC79A7",       desc: "Fibril coupling (run≥minRun required)" },
-  { key: "jFF",    label: "J_Fibril long-range", min: 0, max: 8, step: 0.1, col: "#38bdf8",       desc: "Active fibril–fibril coupling (|d|>1, any distance)" },
+  { key: "hFF",    label: "h_FF background",     min: 0, max: 8, step: 0.1, col: "#38bdf8",       desc: "Background field on all F sites when an active run exists" },
   { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,   col: "#c084fc",       desc: "Min run length to activate J_F" },
 ];
 
@@ -445,7 +445,7 @@ export default function App() {
             <div style={{ color: "#7dd3fc" }}>H = Σᵢ εₛᵢ</div>
             <div style={{ color: "#CC79A7", marginLeft: 8 }}>− J_F Σ⟨i,j⟩ δ(F,F)·𝟙[run≥{params.minRun}]</div>
             <div style={{ color: "#E69F00", marginLeft: 8 }}>− J_D Σ⟨i,j⟩ δ(D,D)</div>
-            <div style={{ color: "#38bdf8", marginLeft: 8 }}>− J_FF Σ|i−j|>1 δ(F*,F*)</div>
+            <div style={{ color: "#38bdf8", marginLeft: 8 }}>− h_FF · N_F · 𝟙[∃ active run]</div>
           </div>
         </div>
 
