@@ -1,7 +1,7 @@
 // Simulation logic — MC step, state helpers, chain initialisation.
 // No React dependencies.
 
-import { STATES, fibrilRunLength, localEnergy } from "./model.js";
+import { STATES, fibrilRunLength, computeEnergy } from "./model.js";
 
 export { STATES };
 
