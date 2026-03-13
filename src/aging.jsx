@@ -34,7 +34,17 @@ const PARAM_CONFIG = [
   { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,   col: "#c084fc",       desc: "Min run length to activate J_F" },
 ];
 
-const MAX_HIST = 200;
+
+const MAX_HIST     = 400;  // max samples kept per series
+const PRUNE_TARGET = 200;  // downsample to this size when MAX_HIST is reached
+
+// Uniformly downsample array a to targetLen by picking evenly spaced indices.
+function downsample(a, targetLen) {
+  if (a.length <= targetLen) return a;
+  return Array.from({ length: targetLen }, (_, i) =>
+    a[Math.round(i * (a.length - 1) / (targetLen - 1))]
+  );
+}
 
 // ── App ─────────────────────────────────────────────────────────────────────
 
@@ -86,12 +96,15 @@ export default function App() {
     trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
     setSnapCount(trajectoryRef.current.length);
     setHistory(prev => {
-      const trim = a => a.length >= MAX_HIST ? a.slice(1) : a;
+      const appendAndPrune = (a, v) => {
+        const next = [...a, v];
+        return next.length > MAX_HIST ? downsample(next, PRUNE_TARGET) : next;
+      };
       return {
-        M: [...trim(prev.M), ct[0] / c.length],
-        D: [...trim(prev.D), ct[1] / c.length],
-        F: [...trim(prev.F), ct[2] / c.length],
-        E: [...trim(prev.E), E],
+        M: appendAndPrune(prev.M, ct[0] / c.length),
+        D: appendAndPrune(prev.D, ct[1] / c.length),
+        F: appendAndPrune(prev.F, ct[2] / c.length),
+        E: appendAndPrune(prev.E, E),
       };
     });
   }, []);
@@ -124,7 +137,8 @@ export default function App() {
     return () => cancelAnimationFrame(animRef.current);
   }, [running, tick]);
 
-  // When params change outside the loop, resync the cached energy
+
+  // When params change, resync the cached energy to the current chain
   useEffect(() => {
     energyRef.current = computeEnergy(refs.chain.current, params);
   }, [params]);
