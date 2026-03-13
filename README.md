@@ -93,7 +93,7 @@ Each entry contains the step index, the full chain as an array of integers (0 = 
 You need [Node.js](https://nodejs.org) v18 or later.
 
 ```bash
-git clone https://github.com/yourname/Aging.git
+git clone https://github.com/carlocamilloni/Aging.git
 cd Aging
 npm install
 npm run dev
