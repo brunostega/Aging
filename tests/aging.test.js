@@ -140,7 +140,7 @@ describe("computeEnergy — hFF background field", () => {
   it("hFF does not fire when no active run exists", () => {
     // [F,F,M,F]: runs of 2 and 1, minRun=3 — no active run, no hFF
     const chain = [F, F, M, F];
-    const expected = 4 * P.eF + P.eM;
+    const expected = 3 * P.eF + P.eM;  
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
   });
 
