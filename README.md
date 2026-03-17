@@ -128,7 +128,7 @@ node aging-cli.js [options]
 | `--T N` | 1.0 | Temperature k_BT |
 | `--eM N` | 0 | Intrinsic energy — Monomer |
 | `--eD N` | 1.4 | Intrinsic energy — Disordered |
-| `--eF N` | 7.0 | Intrinsic energy — Fibril |
+| `--eF N` | 6.0 | Intrinsic energy — Fibril |
 | `--jD N` | 1.0 | J_Disordered coupling |
 | `--jF N` | 3.5 | J_Fibril coupling |
 | `--hFF N` | 3.5 | h_FF background field |
