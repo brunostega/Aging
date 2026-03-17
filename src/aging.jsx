@@ -83,16 +83,19 @@ export default function App() {
   // Single source of truth for chain length (uncontrolled input pattern)
   const sizeRef        = useRef(DEFAULT_N);
   const inputRef       = useRef(null);
+  const energyRef      = useRef(computeEnergy(initChain(DEFAULT_N), DEFAULT_PARAMS));
   const animRef        = useRef(null);
   const stepRef        = useRef(0);
+  const energySumRef   = useRef(0);  // accumulated sum for running average
   const trajectoryRef  = useRef([]);
-  const energyRef      = useRef(computeEnergy(initChain(DEFAULT_N), DEFAULT_PARAMS));
 
   // ── history / trajectory ──────────────────────────────────────────────────
 
   const pushHistory = useCallback((c, p) => {
     const ct = countStates(c);
     const E  = computeEnergy(c, p);
+    energySumRef.current += E;
+    const avgE = energySumRef.current / stepRef.current;
     trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
     setSnapCount(trajectoryRef.current.length);
     setHistory(prev => {
@@ -104,7 +107,7 @@ export default function App() {
         M: appendAndPrune(prev.M, ct[0] / c.length),
         D: appendAndPrune(prev.D, ct[1] / c.length),
         F: appendAndPrune(prev.F, ct[2] / c.length),
-        E: appendAndPrune(prev.E, E),
+        E: appendAndPrune(prev.E, avgE),
       };
     });
   }, []);
@@ -158,6 +161,7 @@ export default function App() {
     setChain(freshChain);
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
+    energySumRef.current = 0;
     trajectoryRef.current = [];
     setSnapCount(0);
     setHistory({ M: [], D: [], F: [], E: [] });
@@ -179,6 +183,7 @@ export default function App() {
     setChain(freshChain);
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
+    energySumRef.current = 0;
     trajectoryRef.current = [];
     setSnapCount(0);
     setHistory({ M: [], D: [], F: [], E: [] });
@@ -335,7 +340,7 @@ export default function App() {
               { key: "M", color: STATE_COLORS[0], label: "Monomer" },
               { key: "D", color: STATE_COLORS[1], label: "Disordered" },
               { key: "F", color: STATE_COLORS[2], label: "Fibril" },
-              { key: "E", color: "#818cf8",        label: "Energy" },
+              { key: "E", color: "#818cf8",        label: "Energy (running avg)" },
             ].map(({ key, color, label }) => (
               <div key={key} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: color, marginBottom: 1 }}>{label}</div>
