@@ -8,15 +8,68 @@ import { computeEnergy, fibrilRunLength } from "./model.js";
 
 // ── Sparkline ───────────────────────────────────────────────────────────────
 
-function Sparkline({ data, color, height = 38 }) {
-  if (data.length < 2) return <svg width="100%" height={height} />;
-  const w = 260, h = height;
+const Y_TICKS = 3;   // number of y-axis tick lines (including min and max)
+const X_TICKS = 4;   // number of x-axis tick marks on the bottom plot
+const PAD_L   = 36;  // left padding for y-axis labels
+const PAD_B   = 18;  // bottom padding for x-axis labels
+const PAD_T   = 4;   // top padding
+const PAD_R   = 4;   // right padding
+
+function niceNum(v) {
+  if (Math.abs(v) >= 1000) return v.toFixed(0);
+  if (Math.abs(v) >= 10)   return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+function Sparkline({ data, color, height = 48, showXAxis = false }) {
+  if (data.length < 2) return <svg width="100%" height={height + (showXAxis ? PAD_B : 0)} />;
+
+  const totalH = height + (showXAxis ? PAD_B : 0);
+  const W = 260;
+  // Plot area
+  const px0 = PAD_L, px1 = W - PAD_R;
+  const py0 = PAD_T, py1 = height - PAD_T;
+  const pw = px1 - px0, ph = py1 - py0;
+
   const mn = Math.min(...data), mx = Math.max(...data), range = mx - mn || 1;
-  const pts = data
-    .map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - mn) / range) * (h - 6) - 3}`)
-    .join(" ");
+
+  const xOf = i => px0 + (i / (data.length - 1)) * pw;
+  const yOf = v => py1 - ((v - mn) / range) * ph;
+
+  const pts = data.map((v, i) => `${xOf(i)},${yOf(v)}`).join(" ");
+
+  // Y ticks
+  const yTickVals = Array.from({ length: Y_TICKS }, (_, i) => mn + (i / (Y_TICKS - 1)) * range);
+
+  // X ticks (step indices)
+  const totalSteps = data.length - 1;
+  const xTickIdxs = Array.from({ length: X_TICKS }, (_, i) => Math.round(i * totalSteps / (X_TICKS - 1)));
+
   return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: "block" }}>
+    <svg width="100%" viewBox={`0 0 ${W} ${totalH}`} preserveAspectRatio="none" style={{ display: "block" }}>
+      {/* Y grid lines + labels */}
+      {yTickVals.map((v, i) => {
+        const y = yOf(v);
+        return (
+          <g key={i}>
+            <line x1={px0} y1={y} x2={px1} y2={y} stroke="#1e2d4a" strokeWidth="0.5" />
+            <text x={px0 - 3} y={y + 3} textAnchor="end" fontSize="7" fill="#475569">{niceNum(v)}</text>
+          </g>
+        );
+      })}
+
+      {/* X ticks + labels (bottom plot only) */}
+      {showXAxis && xTickIdxs.map((idx, i) => {
+        const x = xOf(idx);
+        return (
+          <g key={i}>
+            <line x1={x} y1={py1} x2={x} y2={py1 + 3} stroke="#475569" strokeWidth="0.5" />
+            <text x={x} y={py1 + PAD_B - 3} textAnchor="middle" fontSize="7" fill="#475569">{idx}</text>
+          </g>
+        );
+      })}
+
+      {/* Line */}
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" opacity="0.85" />
     </svg>
   );
@@ -107,7 +160,7 @@ export default function App() {
         M: appendAndPrune(prev.M, ct[0] / c.length),
         D: appendAndPrune(prev.D, ct[1] / c.length),
         F: appendAndPrune(prev.F, ct[2] / c.length),
-        E: appendAndPrune(prev.E, avgE),
+        E: appendAndPrune(prev.E, E),
       };
     });
   }, []);
@@ -322,7 +375,7 @@ export default function App() {
               { label: "Disordered", val: `${(counts[1] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[1] },
               { label: "Fibril",     val: `${(counts[2] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[2] },
               { label: "Active F",   val: `${(activeFibrilFrac * 100).toFixed(0)}%`,          col: "#c084fc" },
-              { label: "Energy",     val: E.toFixed(1),                                        col: "#818cf8" },
+              { label: "Avg Energy", val: step > 0 ? (energySumRef.current / step).toFixed(1) : "—",  col: "#818cf8" },
             ].map(({ label, val, col }) => (
               <div key={label} style={{ background: "#111827", border: `1px solid ${col}33`, borderRadius: 8, padding: "8px 10px" }}>
                 <div style={{ fontSize: 9, color: "#64748b", textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
@@ -337,14 +390,14 @@ export default function App() {
               Population Dynamics
             </div>
             {[
-              { key: "M", color: STATE_COLORS[0], label: "Monomer" },
-              { key: "D", color: STATE_COLORS[1], label: "Disordered" },
-              { key: "F", color: STATE_COLORS[2], label: "Fibril" },
-              { key: "E", color: "#818cf8",        label: "Energy (running avg)" },
-            ].map(({ key, color, label }) => (
+              { key: "M", color: STATE_COLORS[0], label: "Monomer",         xAxis: false },
+              { key: "D", color: STATE_COLORS[1], label: "Disordered",      xAxis: false },
+              { key: "F", color: STATE_COLORS[2], label: "Fibril",          xAxis: false },
+              { key: "E", color: "#818cf8",        label: "Energy (instant)", xAxis: true  },
+            ].map(({ key, color, label, xAxis }) => (
               <div key={key} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: color, marginBottom: 1 }}>{label}</div>
-                <Sparkline data={history[key]} color={color} />
+                <Sparkline data={history[key]} color={color} showXAxis={xAxis} />
               </div>
             ))}
           </div>
