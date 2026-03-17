@@ -40,6 +40,9 @@ H = Σᵢ εₛᵢ
 
 **Catalytic background field** — once any active fibril run forms, `h_FF` lowers the energy of every fibril site on the chain regardless of its local context. This captures secondary nucleation and seeding: an established fibril template changes the free-energy landscape for the whole chain. The field is O(N) and avoids the O(N²) cost of explicit pairwise long-range couplings.
 
+**Competition between aggregation pathways** — the model captures the off-pathway competition between disordered oligomers and fibrils that is central to amyloid disease biology. Both states are stabilised by nearest-neighbour coupling (J_D and J_F respectively), but they differ fundamentally in character: disordered oligomers form freely at any size and concentration, while fibril coupling is gated by a nucleation threshold. At intermediate temperatures and coupling strengths the system can become trapped in a disordered oligomeric phase rather than reaching the fibril state, reflecting the experimental observation that disordered aggregates can act as kinetic competitors to amyloid formation. The balance between the two pathways is controlled by the interplay of intrinsic energies (ε_D vs ε_F), coupling strengths (J_D vs J_F), temperature, and the nucleation barrier (minRun).
+
+
 **Irreversible fibril mode** — an optional toggle locks any fibril site once it joins an active run, preventing reversion. This captures kinetic trapping of mature amyloid cores.
 
 ---
@@ -230,6 +233,12 @@ Aging/
 - [React 18](https://react.dev) — UI and state management
 - [Vite](https://vitejs.dev) + [Vitest](https://vitest.dev) — build tooling and testing
 - Vanilla JS — Monte Carlo engine, no simulation libraries
+
+---
+
+## Acknowledgements
+
+This codebase was developed with the assistance of [Claude Sonnet 4.6](https://www.anthropic.com/claude) (Anthropic), which contributed to the model design, implementation, refactoring, and test suite.
 
 ---
 
