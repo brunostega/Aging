@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { STATES, fibrilRunLength, computeEnergy } from "../src/model.js";
+import { STATES, fibrilRunLength, computeEnergy, deltaEnergy } from "../src/model.js";
 import { initChain, countStates, fibrilRunLengths, mcStep, DEFAULT_PARAMS } from "../src/simulation.js";
 
 const { M, D, F } = STATES;
@@ -151,6 +151,55 @@ describe("computeEnergy — hFF background field", () => {
     const chain = [F, F, F, M, F, F];
     const expected = 5 * P.eF + P.eM - 2 * P.jF - P.hFF * 5;
     expect(computeEnergy(chain, P)).toBeCloseTo(expected);
+  });
+});
+
+// ── deltaEnergy consistency ───────────────────────────────────────────────
+// For every flip, deltaEnergy must equal computeEnergy(new) - computeEnergy(old).
+
+function checkDelta(chain, idx, newState, params) {
+  const oldState = chain[idx];
+  const nF = chain.filter(s => s === STATES.F).length;
+  let hadActive = false;
+  { let run = 0; for (let i = 0; i < chain.length; i++) { run = chain[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } } }
+  const oldE = computeEnergy(chain, params);
+  chain[idx] = newState;
+  const dE = deltaEnergy(chain, idx, oldState, newState, params, nF, hadActive);
+  const newE = computeEnergy(chain, params);
+  chain[idx] = oldState; // restore
+  return { dE, expected: newE - oldE };
+}
+
+describe("deltaEnergy — exact consistency with computeEnergy", () => {
+  const baseCases = [
+    { desc: "M→F inside existing active run",  chain: [F,F,F,M,F,F,F], idx: 3, to: F },
+    { desc: "F→M breaking an active run",      chain: [F,F,F,F,F],     idx: 2, to: M },
+    { desc: "M→D with no interactions",        chain: [M,M,M,M,M],     idx: 2, to: D },
+    { desc: "D→M inside D block",              chain: [D,D,D,M,F,F,F], idx: 1, to: M },
+    { desc: "M→F creating first active run",   chain: [F,F,M,M,M],     idx: 2, to: F },
+    { desc: "F→M removing only active run",    chain: [F,F,F,M,M],     idx: 1, to: M },
+    { desc: "M→F next to sub-threshold run",   chain: [F,F,M,M,M],     idx: 2, to: F },
+    { desc: "F→D inside active run",           chain: [F,F,F,F,F],     idx: 3, to: D },
+    { desc: "F→D inside active run",           chain: [M,M,M,F,F],     idx: 2, to: F },
+    { desc: "F→D inside active run",           chain: [F,F,M,F,F],     idx: 2, to: F },
+  ];
+
+  const cases = [
+    { desc: "M→D next to D neighbour (left)",         chain: [D,M,M,M,M],     idx: 1, to: D },
+    { desc: "M→D next to D neighbour (right)",        chain: [M,M,M,M,D],     idx: 3, to: D },
+    { desc: "M→D between two D neighbours",           chain: [D,M,D,M,M],     idx: 1, to: D },
+    { desc: "D→M breaking D-D pair",                  chain: [D,D,M,M,M],     idx: 0, to: M },
+    { desc: "D→M in middle of D block",               chain: [D,D,D,M,M],     idx: 1, to: M },
+    { desc: "D→F next to D (loses D-D, gains nothing since run<minRun)", chain: [D,D,M,M,M], idx: 1, to: F },
+    ...baseCases
+  ];
+
+  cases.forEach(({ desc, chain: c, idx, to }) => {
+    it(desc, () => {
+      const chain = [...c];
+      const { dE, expected } = checkDelta(chain, idx, to, P);
+      expect(dE).toBeCloseTo(expected);
+    });
   });
 });
 

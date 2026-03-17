@@ -1,7 +1,7 @@
 // Simulation logic — MC step, state helpers, chain initialisation.
 // No React dependencies.
 
-import { STATES, computeEnergy, fibrilRunLength } from "./model.js";
+import { STATES, computeEnergy, deltaEnergy, fibrilRunLength } from "./model.js";
 
 export { STATES };
 
@@ -60,13 +60,40 @@ export function fibrilRunLengths(chain) {
 }
 
 // mcStep accepts the current global energy and returns the updated energy.
-// This avoids recomputing energy from scratch every step while keeping
-// the acceptance criterion exact (no locality assumption).
+// Uses deltaEnergy for O(runLength) ΔE computation instead of O(N) full recompute.
 export function mcStep(chain, params, T, locked, currentE) {
   const N = chain.length;
   const c = [...chain];
   let E = currentE;
 
+  // Precompute nF and hasActive — updated incrementally on each accepted flip
+  let nF = c.filter(s => s === STATES.F).length;
+  let hadActive = false;
+  { let run = 0; for (let i = 0; i < N; i++) { run = c[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } } }
+
+  for (let _ = 0; _ < N; _++) {
+    const idx = Math.floor(Math.random() * N);
+    if (locked && locked[idx]) continue;
+    const oldState = c[idx];
+    const newState = Math.floor(Math.random() * 3);
+    if (newState === oldState) continue;
+    c[idx] = newState;
+    const dE = deltaEnergy(c, idx, oldState, newState, params, nF, hadActive);
+    if (dE > 0 && Math.random() >= Math.exp(-dE / T)) {
+      c[idx] = oldState; // reject
+    } else {
+      E += dE;           // accept — update cached energy incrementally
+      // Update nF and hadActive incrementally
+      if (oldState === STATES.F) nF--;
+      if (newState === STATES.F) nF++;
+      if (!hadActive || newState !== oldState) {
+        let run = 0; hadActive = false;
+        for (let i = 0; i < N; i++) { run = c[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } }
+      }
+    }
+  }
+
+  /* ── Original O(N) implementation (kept for reference / debugging) ────────
   for (let _ = 0; _ < N; _++) {
     const idx = Math.floor(Math.random() * N);
     if (locked && locked[idx]) continue;
@@ -77,11 +104,12 @@ export function mcStep(chain, params, T, locked, currentE) {
     const newE = computeEnergy(c, params);
     const dE = newE - E;
     if (dE > 0 && Math.random() >= Math.exp(-dE / T)) {
-      c[idx] = oldState; // reject — restore old state, energy unchanged
+      c[idx] = oldState;
     } else {
-      E = newE;          // accept — update cached energy
+      E = newE;
     }
   }
+  ─────────────────────────────────────────────────────────────────────────── */
 
   // Lock any newly active fibril sites when irreversible mode is on
   const newLocked = locked ? [...locked] : new Array(N).fill(false);
