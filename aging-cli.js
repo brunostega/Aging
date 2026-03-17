@@ -6,7 +6,7 @@
 //
 // Options:
 //   --steps N          Number of MC steps to run (default: 1000)
-//   --n N              Chain length (default: 80)
+//   --n N              Chain length (default: 100)
 //   --seq MMMFFF...    Starting conformation string (overrides --n)
 //   --eM N             Intrinsic energy — Monomer       (default: 0)
 //   --eD N             Intrinsic energy — Disordered    (default: 1.4)
