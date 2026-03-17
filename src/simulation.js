@@ -7,7 +7,7 @@ export { STATES };
 
 export const DEFAULT_N  = 100;
 export const MIN_N      = 10;
-export const MAX_N      = 1000;
+export const MAX_N      = 10000;
 
 export const STATE_NAMES  = ["Monomer", "Disordered", "Fibril"];
 export const STATE_COLORS = ["#56B4E9", "#E69F00", "#CC79A7"];
