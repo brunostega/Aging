@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   STATES, STATE_NAMES, STATE_COLORS,
   DEFAULT_N, DEFAULT_PARAMS, MIN_N, MAX_N,
-  initChain, parseChain, countStates, fibrilRunLengths, mcStep,
+  initChain, parseChain, countStates, fibrilRunLengths,
 } from "./simulation.js";
 import { computeEnergy, fibrilRunLength } from "./model.js";
 
@@ -115,6 +115,7 @@ export default function App() {
   const [snapCount, setSnapCount]         = useState(0);
   const [seqInput, setSeqInput]           = useState("");
   const [seqError, setSeqError]           = useState(null);
+  const [sweepsPerBatch, setSweepsPerBatch] = useState(10);
 
   // Refs for values needed inside the rAF loop without stale closures
   const refs = {
@@ -138,16 +139,15 @@ export default function App() {
   const sizeRef        = useRef(DEFAULT_N);
   const inputRef       = useRef(null);
   const energyRef      = useRef(computeEnergy(initChain(DEFAULT_N), DEFAULT_PARAMS));
-  const animRef        = useRef(null);
+  const workerRef      = useRef(null);
   const stepRef        = useRef(0);
-  const energySumRef   = useRef(0);  // accumulated sum for running average
+  const energySumRef   = useRef(0);
   const trajectoryRef  = useRef([]);
 
   // ── history / trajectory ──────────────────────────────────────────────────
 
-  const pushHistory = useCallback((c, p) => {
+  const pushHistory = useCallback((c, E) => {
     const ct = countStates(c);
-    const E  = computeEnergy(c, p);
     energySumRef.current += E;
     const avgE = energySumRef.current / stepRef.current;
     trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
@@ -167,39 +167,70 @@ export default function App() {
     });
   }, []);
 
-  // ── animation loop ────────────────────────────────────────────────────────
+  // ── worker setup ──────────────────────────────────────────────────────────
 
-  const tick = useCallback(() => {
-    if (!refs.running.current) return;
-    const activeLocked = refs.irreversible.current ? refs.locked.current : null;
-    const { chain: nc, locked: nl, E: newE } = mcStep(
-      refs.chain.current, refs.params.current, refs.T.current, activeLocked, energyRef.current,
-    );
-    energyRef.current = newE;
-    stepRef.current += 1;
-    setChain(nc);
-    if (refs.irreversible.current) setLocked(nl);
-    setStep(stepRef.current);
-    pushHistory(nc, refs.params.current);
-    if (refs.stopOnFibril.current && nc.every(s => s === STATES.F)) {
-      refs.running.current = false;
-      setRunning(false);
-      return;
-    }
-    animRef.current = requestAnimationFrame(tick);
+  // Create worker once on mount
+  useEffect(() => {
+    workerRef.current = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+    workerRef.current.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === "batch") {
+        const { chain: nc, locked: nl, E: newE, step, energySum, snapshots } = msg;
+        energyRef.current = newE;
+        energySumRef.current = energySum;
+        stepRef.current = step;
+        setChain(nc);
+        setLocked(nl);
+        setStep(step);
+        // Push one history point per batch (the last snapshot)
+        if (snapshots.length > 0) {
+          const last = snapshots[snapshots.length - 1];
+          pushHistory(last.chain, last.E);
+          // Append all snapshots to trajectory
+          for (const snap of snapshots) {
+            trajectoryRef.current.push(snap);
+          }
+          setSnapCount(trajectoryRef.current.length);
+        }
+      }
+      if (msg.type === "done") {
+        setRunning(false);
+      }
+    };
+    return () => workerRef.current.terminate();
   }, [pushHistory]);
 
+  // Start/stop worker when running changes
   useEffect(() => {
-    if (running) animRef.current = requestAnimationFrame(tick);
-    else cancelAnimationFrame(animRef.current);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [running, tick]);
+    if (!workerRef.current) return;
+    if (running) {
+      workerRef.current.postMessage({
+        type: "start",
+        chain:         refs.chain.current,
+        locked:        refs.locked.current,
+        params:        refs.params.current,
+        T:             refs.T.current,
+        irreversible:  refs.irreversible.current,
+        stopOnFibril:  refs.stopOnFibril.current,
+        E:             energyRef.current,
+        step:          stepRef.current,
+        energySum:     energySumRef.current,
+        sweepsPerBatch,
+      });
+    } else {
+      workerRef.current.postMessage({ type: "stop" });
+    }
+  }, [running]);
 
-
-  // When params change, resync the cached energy to the current chain
+  // When params or T change, resync energy and inform worker
   useEffect(() => {
-    energyRef.current = computeEnergy(refs.chain.current, params);
-  }, [params]);
+    energyRef.current = computeEnergy(refs.chain.current, refs.params.current);
+  }, [params, T]);
+
+  // When sweepsPerBatch changes, inform worker
+  useEffect(() => {
+    if (workerRef.current) workerRef.current.postMessage({ type: "config", sweepsPerBatch });
+  }, [sweepsPerBatch]);
 
   // ── reset ─────────────────────────────────────────────────────────────────
 
@@ -210,7 +241,7 @@ export default function App() {
     sizeRef.current = nn;
     if (inputRef.current) inputRef.current.value = nn;
     setRunning(false);
-    cancelAnimationFrame(animRef.current);
+    if (workerRef.current) workerRef.current.postMessage({ type: "stop" });
     const freshChain = initChain(nn);
     energyRef.current = computeEnergy(freshChain, params);
     setChain(freshChain);
@@ -232,7 +263,7 @@ export default function App() {
     sizeRef.current = nn;
     if (inputRef.current) inputRef.current.value = nn;
     setRunning(false);
-    cancelAnimationFrame(animRef.current);
+    if (workerRef.current) workerRef.current.postMessage({ type: "stop" });
     const freshChain = parsed;
     energyRef.current = computeEnergy(freshChain, params);
     setChain(freshChain);
@@ -248,16 +279,17 @@ export default function App() {
 
   const doStep = () => {
     if (running) return;
-    const activeLocked = irreversible ? refs.locked.current : null;
-    const { chain: nc, locked: nl, E: newE } = mcStep(
-      refs.chain.current, refs.params.current, refs.T.current, activeLocked, energyRef.current,
-    );
-    energyRef.current = newE;
-    if (irreversible) setLocked(nl);
-    stepRef.current += 1;
-    setChain(nc);
-    setStep(stepRef.current);
-    pushHistory(nc, refs.params.current);
+    workerRef.current.postMessage({
+      type:         "step",
+      chain:        refs.chain.current,
+      locked:       refs.locked.current,
+      params:       refs.params.current,
+      T:            refs.T.current,
+      irreversible: refs.irreversible.current,
+      E:            energyRef.current,
+      step:         stepRef.current,
+      energySum:    energySumRef.current,
+    });
   };
 
   // ── trajectory export ─────────────────────────────────────────────────────
@@ -534,6 +566,21 @@ export default function App() {
               ? <div style={{ fontSize: 9, color: "#f87171", marginTop: 5 }}>{seqError}</div>
               : <div style={{ fontSize: 9, color: "#374151", marginTop: 5 }}>M · D · F — Enter or Apply</div>
             }
+          </div>
+
+          {/* Sweeps per batch */}
+          <div style={{ background: "#111827", border: "1px solid #1e2d4a", borderRadius: 8, padding: 14, marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Sweeps per frame</div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>batch size</span>
+              <span style={{ fontSize: 14, color: "#94a3b8", fontWeight: 600 }}>{sweepsPerBatch}</span>
+            </div>
+            <input type="range" min={1} max={200} step={1} value={sweepsPerBatch}
+              onChange={e => setSweepsPerBatch(parseInt(e.target.value))}
+              style={{ accentColor: "#64748b" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569", marginTop: 2 }}>
+              <span>slower / smoother</span><span>faster</span>
+            </div>
           </div>
 
           {/* Temperature */}
