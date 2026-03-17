@@ -21,12 +21,11 @@ function niceNum(v) {
   return v.toFixed(2);
 }
 
-function Sparkline({ data, color, height = 48, showXAxis = false }) {
+function Sparkline({ data, color, height = 48, showXAxis = false, steps = null }) {
   if (data.length < 2) return <svg width="100%" height={height + (showXAxis ? PAD_B : 0)} />;
 
   const totalH = height + (showXAxis ? PAD_B : 0);
   const W = 260;
-  // Plot area
   const px0 = PAD_L, px1 = W - PAD_R;
   const py0 = PAD_T, py1 = height - PAD_T;
   const pw = px1 - px0, ph = py1 - py0;
@@ -41,9 +40,10 @@ function Sparkline({ data, color, height = 48, showXAxis = false }) {
   // Y ticks
   const yTickVals = Array.from({ length: Y_TICKS }, (_, i) => mn + (i / (Y_TICKS - 1)) * range);
 
-  // X ticks (step indices)
-  const totalSteps = data.length - 1;
-  const xTickIdxs = Array.from({ length: X_TICKS }, (_, i) => Math.round(i * totalSteps / (X_TICKS - 1)));
+  // X ticks: evenly spaced sample indices, labelled with actual step numbers
+  const xTickSampleIdxs = Array.from({ length: X_TICKS }, (_, i) =>
+    Math.round(i * (data.length - 1) / (X_TICKS - 1))
+  );
 
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${totalH}`} preserveAspectRatio="none" style={{ display: "block" }}>
@@ -58,13 +58,14 @@ function Sparkline({ data, color, height = 48, showXAxis = false }) {
         );
       })}
 
-      {/* X ticks + labels (bottom plot only) */}
-      {showXAxis && xTickIdxs.map((idx, i) => {
-        const x = xOf(idx);
+      {/* X ticks + labels using actual step numbers */}
+      {showXAxis && xTickSampleIdxs.map((si, i) => {
+        const x = xOf(si);
+        const label = steps ? steps[si] : si;
         return (
           <g key={i}>
             <line x1={x} y1={py1} x2={x} y2={py1 + 3} stroke="#475569" strokeWidth="0.5" />
-            <text x={x} y={py1 + PAD_B - 3} textAnchor="middle" fontSize="7" fill="#475569">{idx}</text>
+            <text x={x} y={py1 + PAD_B - 3} textAnchor="middle" fontSize="7" fill="#475569">{label}</text>
           </g>
         );
       })}
@@ -110,7 +111,7 @@ export default function App() {
   const [locked, setLocked]               = useState(() => new Array(DEFAULT_N).fill(false));
   const [running, setRunning]             = useState(false);
   const [step, setStep]                   = useState(0);
-  const [history, setHistory]             = useState({ M: [], D: [], F: [], E: [] });
+  const [history, setHistory]             = useState({ M: [], D: [], F: [], E: [], steps: [] });
   const [snapCount, setSnapCount]         = useState(0);
   const [seqInput, setSeqInput]           = useState("");
   const [seqError, setSeqError]           = useState(null);
@@ -161,6 +162,7 @@ export default function App() {
         D: appendAndPrune(prev.D, ct[1] / c.length),
         F: appendAndPrune(prev.F, ct[2] / c.length),
         E: appendAndPrune(prev.E, E),
+        steps: appendAndPrune(prev.steps, stepRef.current),
       };
     });
   }, []);
@@ -217,7 +219,7 @@ export default function App() {
     energySumRef.current = 0;
     trajectoryRef.current = [];
     setSnapCount(0);
-    setHistory({ M: [], D: [], F: [], E: [] });
+    setHistory({ M: [], D: [], F: [], E: [], steps: [] });
   };
 
   // ── sequence apply ───────────────────────────────────────────────────────
@@ -239,7 +241,7 @@ export default function App() {
     energySumRef.current = 0;
     trajectoryRef.current = [];
     setSnapCount(0);
-    setHistory({ M: [], D: [], F: [], E: [] });
+    setHistory({ M: [], D: [], F: [], E: [], steps: [] });
   };
 
   // ── single step ───────────────────────────────────────────────────────────
@@ -397,7 +399,7 @@ export default function App() {
             ].map(({ key, color, label, xAxis }) => (
               <div key={key} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: color, marginBottom: 1 }}>{label}</div>
-                <Sparkline data={history[key]} color={color} showXAxis={xAxis} />
+                <Sparkline data={history[key]} color={color} showXAxis={xAxis} steps={xAxis ? history.steps : null} />
               </div>
             ))}
           </div>
