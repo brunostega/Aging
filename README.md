@@ -109,6 +109,63 @@ sudo port install nodejs22 npm10
 
 ---
 
+## Command-line interface
+
+The simulation can be run headlessly from the terminal, writing the time trace and full trajectory to TSV files on the fly.
+
+```bash
+node aging-cli.js [options]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--steps N` | 1000 | Number of MC steps |
+| `--n N` | 80 | Chain length |
+| `--seq MMMFFF...` | — | Starting conformation string (overrides `--n`) |
+| `--T N` | 1.0 | Temperature k_BT |
+| `--eM N` | 0 | Intrinsic energy — Monomer |
+| `--eD N` | 1.5 | Intrinsic energy — Disordered |
+| `--eF N` | 3.0 | Intrinsic energy — Fibril |
+| `--jD N` | 1.2 | J_Disordered coupling |
+| `--jF N` | 2.5 | J_Fibril coupling |
+| `--hFF N` | 0.5 | h_FF background field |
+| `--minRun N` | 3 | Min fibril run length |
+| `--irreversible` | off | Enable irreversible fibril locking |
+| `--stopOnFibril` | off | Stop when chain reaches 100% fibril |
+| `--trace FILE` | trace.tsv | Time trace output file |
+| `--traj FILE` | trajectory.tsv | Trajectory output file |
+| `--help` | — | Show usage |
+
+Both output files are written incrementally — safe to inspect mid-run with `tail -f`.
+
+**trace.tsv** — one row per step:
+```
+step  fM      fD      fF      fActiveF  E        avgE
+0     1.0000  0.0000  0.0000  0.0000    80.0000  80.0000
+1     0.9875  0.0125  0.0000  0.0000    79.5000  79.7500
+...
+```
+
+**trajectory.tsv** — one row per step, chain encoded as a string of M/D/F characters:
+```
+step  chain           E
+0     MMMMMMMM...     80.0000
+1     MMDMMMMD...     79.5000
+...
+```
+
+Example — run 5000 steps at low temperature starting from all monomers:
+```bash
+node aging-cli.js --steps 5000 --n 100 --T 0.5 --jF 3.0 --hFF 1.0 --stopOnFibril
+```
+
+Or via npm:
+```bash
+npm run cli -- --steps 5000 --T 0.5
+```
+
+---
+
 ## Tests
 
 The energy functions and MC engine are covered by a suite of regression tests using [Vitest](https://vitest.dev). All tests are single-point energy calculations with hand-verified expected values — fully deterministic, no MC randomness.
@@ -159,6 +216,7 @@ Aging/
 │   └── main.jsx         # entry point
 ├── tests/
 │   └── aging.test.js    # regression tests
+├── aging-cli.js         # headless CLI runner
 ├── index.html
 ├── package.json
 ├── vite.config.js       # Vite + Vitest config
