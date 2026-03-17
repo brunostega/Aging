@@ -120,15 +120,15 @@ node aging-cli.js [options]
 | Flag | Default | Description |
 |---|---|---|
 | `--steps N` | 1000 | Number of MC steps |
-| `--n N` | 80 | Chain length |
+| `--n N` | 100 | Chain length |
 | `--seq MMMFFF...` | — | Starting conformation string (overrides `--n`) |
 | `--T N` | 1.0 | Temperature k_BT |
 | `--eM N` | 0 | Intrinsic energy — Monomer |
-| `--eD N` | 1.5 | Intrinsic energy — Disordered |
-| `--eF N` | 3.0 | Intrinsic energy — Fibril |
-| `--jD N` | 1.2 | J_Disordered coupling |
-| `--jF N` | 2.5 | J_Fibril coupling |
-| `--hFF N` | 0.5 | h_FF background field |
+| `--eD N` | 1.4 | Intrinsic energy — Disordered |
+| `--eF N` | 7.0 | Intrinsic energy — Fibril |
+| `--jD N` | 1.0 | J_Disordered coupling |
+| `--jF N` | 3.5 | J_Fibril coupling |
+| `--hFF N` | 3.5 | h_FF background field |
 | `--minRun N` | 3 | Min fibril run length |
 | `--irreversible` | off | Enable irreversible fibril locking |
 | `--stopOnFibril` | off | Stop when chain reaches 100% fibril |
