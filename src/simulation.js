@@ -66,7 +66,6 @@ export function mcStep(chain, params, T, locked, currentE) {
   const c = [...chain];
   let E = currentE;
 
-  // Precompute nF and hasActive — updated incrementally on each accepted flip
   let nF = c.filter(s => s === STATES.F).length;
   let hadActive = false;
   { let run = 0; for (let i = 0; i < N; i++) { run = c[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } } }

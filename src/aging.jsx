@@ -225,6 +225,15 @@ export default function App() {
   // When params or T change, resync energy and inform worker
   useEffect(() => {
     energyRef.current = computeEnergy(refs.chain.current, refs.params.current);
+    // Push updated params to the worker so changes take effect immediately
+    if (workerRef.current) {
+      workerRef.current.postMessage({
+        type: "params",
+        params: refs.params.current,
+        T:      refs.T.current,
+        E:      energyRef.current,
+      });
+    }
   }, [params, T]);
 
   // When sweepsPerBatch changes, inform worker
