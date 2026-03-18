@@ -21,7 +21,7 @@ function niceNum(v) {
   return v.toFixed(2);
 }
 
-function Sparkline({ data, color, height = 48, showXAxis = false, steps = null }) {
+function Sparkline({ data, color, height = 48, showXAxis = false, steps = null, totalSteps = null }) {
   if (data.length < 2) return <svg width="100%" height={height + (showXAxis ? PAD_B : 0)} />;
 
   const totalH = height + (showXAxis ? PAD_B : 0);
@@ -40,10 +40,16 @@ function Sparkline({ data, color, height = 48, showXAxis = false, steps = null }
   // Y ticks
   const yTickVals = Array.from({ length: Y_TICKS }, (_, i) => mn + (i / (Y_TICKS - 1)) * range);
 
-  // X ticks: evenly spaced sample indices, labelled with actual step numbers
+  // X ticks: evenly spaced positions, labelled with actual step numbers from the steps array
   const xTickSampleIdxs = Array.from({ length: X_TICKS }, (_, i) =>
     Math.round(i * (data.length - 1) / (X_TICKS - 1))
   );
+
+  function xTickLabel(si, tickIdx) {
+    if (!steps || steps.length === 0) return si;
+    const lastStep = totalSteps ?? steps[steps.length - 1];
+    return Math.round(tickIdx * lastStep / (X_TICKS - 1));
+  }
 
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${totalH}`} preserveAspectRatio="none" style={{ display: "block" }}>
@@ -61,7 +67,7 @@ function Sparkline({ data, color, height = 48, showXAxis = false, steps = null }
       {/* X ticks + labels using actual step numbers */}
       {showXAxis && xTickSampleIdxs.map((si, i) => {
         const x = xOf(si);
-        const label = steps ? steps[si] : si;
+        const label = xTickLabel(si, i);
         return (
           <g key={i}>
             <line x1={x} y1={py1} x2={x} y2={py1 + 3} stroke="#475569" strokeWidth="0.5" />
@@ -153,10 +159,6 @@ export default function App() {
 
   const pushHistory = useCallback((c, E) => {
     const ct = countStates(c);
-    // averages accumulated in onmessage for per-snapshot accuracy
-    const avgE = energySumRef.current / stepRef.current;
-    trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
-    setSnapCount(trajectoryRef.current.length);
     setHistory(prev => {
       const appendAndPrune = (a, v) => {
         const next = [...a, v];
@@ -487,7 +489,7 @@ export default function App() {
             ].map(({ key, color, label, xAxis }) => (
               <div key={key} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: color, marginBottom: 1 }}>{label}</div>
-                <Sparkline data={history[key]} color={color} showXAxis={xAxis} steps={xAxis ? history.steps : null} />
+                <Sparkline data={history[key]} color={color} showXAxis={xAxis} steps={xAxis ? history.steps : null} totalSteps={xAxis ? step : null} />
               </div>
             ))}
           </div>
