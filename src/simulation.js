@@ -1,7 +1,10 @@
 // Simulation logic — MC step, state helpers, chain initialisation.
 // No React dependencies.
 
-import { STATES, computeEnergy, deltaEnergy, fibrilRunLength } from "./model.js";
+import {
+  STATES, computeEnergy,
+  deltaEnergyFast, buildSimState, updateRunLen, countActiveRuns,
+} from "./model.js";
 
 export { STATES };
 
@@ -60,15 +63,14 @@ export function fibrilRunLengths(chain) {
 }
 
 // mcStep accepts the current global energy and returns the updated energy.
-// Uses deltaEnergy for O(runLength) ΔE computation instead of O(N) full recompute.
+// Builds runLen cache once per sweep — O(N) — then uses O(window) deltaEnergyFast
+// per flip instead of O(N) fibrilRunLength calls or full recomputes.
 export function mcStep(chain, params, T, locked, currentE) {
   const N = chain.length;
   const c = [...chain];
   let E = currentE;
 
-  let nF = c.filter(s => s === STATES.F).length;
-  let hadActive = false;
-  { let run = 0; for (let i = 0; i < N; i++) { run = c[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } } }
+  let { nF, nActiveRuns, runLen } = buildSimState(c, params.minRun);
 
   for (let _ = 0; _ < N; _++) {
     const idx = Math.floor(Math.random() * N);
@@ -76,45 +78,31 @@ export function mcStep(chain, params, T, locked, currentE) {
     const oldState = c[idx];
     const newState = Math.floor(Math.random() * 3);
     if (newState === oldState) continue;
+
     c[idx] = newState;
-    const dE = deltaEnergy(c, idx, oldState, newState, params, nF, hadActive);
+    updateRunLen(c, runLen, idx);
+
+    const dE = deltaEnergyFast(c, idx, oldState, newState, params, nF, nActiveRuns, runLen);
+
     if (dE > 0 && Math.random() >= Math.exp(-dE / T)) {
-      c[idx] = oldState; // reject
+      // Reject — revert chain and runLen
+      c[idx] = oldState;
+      updateRunLen(c, runLen, idx);
     } else {
-      E += dE;           // accept — update cached energy incrementally
-      // Update nF and hadActive incrementally
+      // Accept — update incremental counters
+      E += dE;
       if (oldState === STATES.F) nF--;
       if (newState === STATES.F) nF++;
-      if (!hadActive || newState !== oldState) {
-        let run = 0; hadActive = false;
-        for (let i = 0; i < N; i++) { run = c[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } }
-      }
+      nActiveRuns = countActiveRuns(runLen, params.minRun);
     }
   }
 
-  /* ── Original O(N) implementation (kept for reference / debugging) ────────
-  for (let _ = 0; _ < N; _++) {
-    const idx = Math.floor(Math.random() * N);
-    if (locked && locked[idx]) continue;
-    const oldState = c[idx];
-    const newState = Math.floor(Math.random() * 3);
-    if (newState === oldState) continue;
-    c[idx] = newState;
-    const newE = computeEnergy(c, params);
-    const dE = newE - E;
-    if (dE > 0 && Math.random() >= Math.exp(-dE / T)) {
-      c[idx] = oldState;
-    } else {
-      E = newE;
-    }
-  }
-  ─────────────────────────────────────────────────────────────────────────── */
-
-  // Lock any newly active fibril sites when irreversible mode is on
+  // Lock any newly active fibril sites when irreversible mode is on.
+  // runLen is up to date so no need to call fibrilRunLength.
   const newLocked = locked ? [...locked] : new Array(N).fill(false);
   if (locked !== null) {
     for (let i = 0; i < N; i++) {
-      if (!newLocked[i] && c[i] === STATES.F && fibrilRunLength(c, i) >= params.minRun) {
+      if (!newLocked[i] && c[i] === STATES.F && runLen[i] >= params.minRun) {
         newLocked[i] = true;
       }
     }
