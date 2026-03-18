@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { STATES, fibrilRunLength, computeEnergy, deltaEnergy,
+import { STATES, fibrilRunLength, computeEnergy,
          buildRunLen, countActiveRuns, buildSimState, updateRunLen,
-         patchEnergyFast, deltaEnergyFast } from "../src/model.js";
+         deltaEnergyFast } from "../src/model.js";
 import { initChain, countStates, fibrilRunLengths, mcStep, DEFAULT_PARAMS } from "../src/simulation.js";
 
 const { M, D, F } = STATES;
@@ -161,12 +161,11 @@ describe("computeEnergy — hFF background field", () => {
 
 function checkDelta(chain, idx, newState, params) {
   const oldState = chain[idx];
-  const nF = chain.filter(s => s === STATES.F).length;
-  let hadActive = false;
-  { let run = 0; for (let i = 0; i < chain.length; i++) { run = chain[i] === STATES.F ? run + 1 : 0; if (run >= params.minRun) { hadActive = true; break; } } }
+  const { nF, nActiveRuns, runLen } = buildSimState(chain, params.minRun);
   const oldE = computeEnergy(chain, params);
   chain[idx] = newState;
-  const dE = deltaEnergy(chain, idx, oldState, newState, params, nF, hadActive);
+  updateRunLen(chain, runLen, idx);
+  const dE = deltaEnergyFast(chain, idx, oldState, newState, params, nF, nActiveRuns, runLen);
   const newE = computeEnergy(chain, params);
   chain[idx] = oldState; // restore
   return { dE, expected: newE - oldE };
