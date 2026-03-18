@@ -42,18 +42,15 @@ export function updateRunLen(chain, runLen, idx) {
 
   if (chain[idx] !== STATES.F) {
     runLen[idx] = 0;
-    // Left flank
     if (lo < idx) { const len = idx - lo; for (let k = lo; k < idx; k++) runLen[k] = len; }
-    // Right flank
     if (idx < hi) { const len = hi - idx; for (let k = idx + 1; k <= hi; k++) runLen[k] = len; }
   } else {
-    // Merged run
     const len = hi - lo + 1;
     for (let k = lo; k <= hi; k++) runLen[k] = len;
   }
 }
 
-// Count active runs (length >= minRun) from a runLen array — O(N/avgRunLen).
+// Count active runs (length >= minRun) — O(N/avgRunLen).
 export function countActiveRuns(runLen, minRun) {
   let count = 0, i = 0;
   const N = runLen.length;
@@ -67,16 +64,13 @@ export function countActiveRuns(runLen, minRun) {
 }
 
 // Build all incremental state needed by mcStep in one O(N) pass.
-// Returns { nF, nActiveRuns, runLen }
 export function buildSimState(chain, minRun) {
   const N = chain.length;
   const runLen = new Int32Array(N);
-  let nF = 0;
-  let i = 0;
+  let nF = 0, i = 0;
   while (i < N) {
     if (chain[i] !== STATES.F) { i++; continue; }
-    nF++;
-    let j = i + 1;
+    let j = i;
     while (j < N && chain[j] === STATES.F) { nF++; j++; }
     const len = j - i;
     for (let k = i; k < j; k++) runLen[k] = len;
@@ -120,27 +114,12 @@ export function computeEnergy(chain, params) {
 }
 
 // ── Local ΔE ─────────────────────────────────────────────────────────────────
-//
-// When site idx changes state, only these contributions to E can change:
-//   1. Intrinsic energy of idx
-//   2. D-D coupling of idx with its two neighbours
-//   3. jF coupling: the run containing idx plus immediately adjacent runs
-//   4. h_FF term: depends on nF and nActiveRuns
-//
-// Strategy: evaluate patch energy of the affected window before and after.
-// ΔE = patchE_new − patchE_old exactly.
 
 function affectedWindow(chain, idx) {
   const N = chain.length;
   let lo = idx, hi = idx;
-  if (idx > 0) {
-    if      (chain[idx-1] === STATES.F) { lo = idx-1; while (lo > 0 && chain[lo-1] === STATES.F) lo--; }
-    else if (chain[idx-1] === STATES.D) { lo = idx-1; }
-  }
-  if (idx < N-1) {
-    if      (chain[idx+1] === STATES.F) { hi = idx+1; while (hi < N-1 && chain[hi+1] === STATES.F) hi++; }
-    else if (chain[idx+1] === STATES.D) { hi = idx+1; }
-  }
+  if (idx > 0     && chain[idx-1] === STATES.F) { lo = idx-1; while (lo > 0 && chain[lo-1] === STATES.F) lo--; }
+  if (idx < N - 1 && chain[idx+1] === STATES.F) { hi = idx+1; while (hi < N-1 && chain[hi+1] === STATES.F) hi++; }
   return [lo, hi];
 }
 
@@ -174,17 +153,39 @@ function patchEnergyFast(chain, lo, hi, params, runLen) {
 // chain must contain newState at idx; runLen must reflect newState.
 // nActiveRuns is the BEFORE-flip count.
 export function deltaEnergyFast(chain, idx, oldState, newState, params, nF, nActiveRuns, runLen) {
-  const { hFF, minRun } = params;
+  const { eM, eD, eF, jD, hFF, minRun } = params;
+  const N = chain.length;
+
+  // ── Fast path: neither state is F ─────────────────────────────────────────
+  if (oldState !== STATES.F && newState !== STATES.F) {
+    const baseE = [eM, eD, eF];
+    let dE = baseE[newState] - baseE[oldState];
+    if (idx > 0) {
+      const left = chain[idx - 1];
+      if (left === STATES.D) {
+        if (newState === STATES.D) dE -= jD;
+        if (oldState === STATES.D) dE += jD;
+      }
+    }
+    if (idx < N - 1) {
+      const right = chain[idx + 1];
+      if (right === STATES.D) {
+        if (newState === STATES.D) dE -= jD;
+        if (oldState === STATES.D) dE += jD;
+      }
+    }
+    return dE;
+  }
+
+  // ── General path: at least one state is F ────────────────────────────────
   const [lo, hi] = affectedWindow(chain, idx);
 
   const newPatch = patchEnergyFast(chain, lo, hi, params, runLen);
 
-  // Temporarily revert
   chain[idx] = oldState;
   updateRunLen(chain, runLen, idx);
   const oldPatch = patchEnergyFast(chain, lo, hi, params, runLen);
 
-  // Restore
   chain[idx] = newState;
   updateRunLen(chain, runLen, idx);
 

@@ -17,7 +17,7 @@
 //   --minRun N         Min fibril run length            (default: 3)
 //   --T N              Temperature k_BT                 (default: 1.0)
 //   --irreversible     Enable irreversible fibril locking
-//   --stopOnFibril     Stop when chain is 100% fibril
+//   --stopOnFibril F   Stop when fibril fraction reaches F ∈ (0,1] (default: 1.0)
 //   --trace FILE       Output file for time trace       (default: trace.tsv)
 //   --traj FILE        Output file for trajectory       (default: trajectory.tsv)
 //   --help             Show this help message
@@ -32,22 +32,22 @@ import {
   STATES, STATE_NAMES, DEFAULT_N, DEFAULT_PARAMS, MIN_N, MAX_N,
   initChain, parseChain, countStates, mcStep,
 } from "./src/simulation.js";
-import { computeEnergy, fibrilRunLength } from "./src/model.js";
+import { computeEnergy } from "./src/model.js";
 
 // ── Argument parsing ────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
   const args = argv.slice(2);
   const opts = {
-    steps:         1000,
-    n:             DEFAULT_N,
-    seq:           null,
-    T:             1.0,
-    irreversible:  false,
-    stopOnFibril:  false,
-    trace:         "trace.tsv",
-    traj:          "trajectory.tsv",
-    params:        { ...DEFAULT_PARAMS },
+    steps:        1000,
+    n:            DEFAULT_N,
+    seq:          null,
+    T:            1.0,
+    irreversible: false,
+    stopOnFibril: null,
+    trace:        "trace.tsv",
+    traj:         "trajectory.tsv",
+    params:       { ...DEFAULT_PARAMS },
   };
 
   const paramKeys = ["eM", "eD", "eF", "jD", "jF", "hFF", "minRun"];
@@ -62,17 +62,23 @@ function parseArgs(argv) {
       console.log(helpLines.join("\n"));
       process.exit(0);
     }
-    else if (a === "--irreversible")  opts.irreversible = true;
-    else if (a === "--stopOnFibril")  opts.stopOnFibril = true;
-    else if (a === "--steps")   opts.steps  = parseInt(args[++i]);
-    else if (a === "--n")       opts.n      = parseInt(args[++i]);
-    else if (a === "--T")       opts.T      = parseFloat(args[++i]);
-    else if (a === "--seq")     opts.seq    = args[++i];
-    else if (a === "--trace")   opts.trace  = args[++i];
-    else if (a === "--traj")    opts.traj   = args[++i];
+    else if (a === "--irreversible") opts.irreversible = true;
+    else if (a === "--stopOnFibril") {
+      const v = parseFloat(args[i + 1]);
+      opts.stopOnFibril = (!isNaN(v) && v > 0 && v <= 1) ? v : 1.0;
+      if (!isNaN(parseFloat(args[i + 1]))) i++;
+    }
+    else if (a === "--steps")  opts.steps = parseInt(args[++i]);
+    else if (a === "--n")      opts.n     = parseInt(args[++i]);
+    else if (a === "--T")      opts.T     = parseFloat(args[++i]);
+    else if (a === "--seq")    opts.seq   = args[++i];
+    else if (a === "--trace")  opts.trace = args[++i];
+    else if (a === "--traj")   opts.traj  = args[++i];
     else if (paramKeys.some(k => a === `--${k}`)) {
       const key = a.slice(2);
-      opts.params[key] = key === "minRun" ? parseInt(args[++i]) : parseFloat(args[++i]);
+      opts.params[key] = key === "minRun"
+        ? Math.max(1, parseInt(args[++i]))
+        : parseFloat(args[++i]);
     }
     else {
       console.error(`Unknown option: ${a}. Use --help for usage.`);
@@ -129,7 +135,6 @@ const trajFd   = fs.openSync(opts.traj,  "w");
 fs.writeSync(traceFd, ["step", "fM", "fD", "fF", "fActiveF", "E", "avgE"].join("\t") + "\n");
 fs.writeSync(trajFd,  ["step", "chain", "E"].join("\t") + "\n");
 
-// Write step 0
 function writeStep(step) {
   const counts = countStates(chain);
   const N = chain.length;
@@ -154,7 +159,7 @@ console.log(`  Steps        : ${steps}`);
 console.log(`  T            : ${T}`);
 console.log(`  Params       : ${JSON.stringify(params)}`);
 console.log(`  Irreversible : ${irreversible}`);
-console.log(`  Stop@100%F   : ${stopOnFibril}`);
+console.log(`  Stop@frac    : ${stopOnFibril !== null ? stopOnFibril : 'disabled'}`);
 console.log(`  Trace file   : ${opts.trace}`);
 console.log(`  Traj file    : ${opts.traj}`);
 console.log("");
@@ -182,10 +187,13 @@ for (let s = 1; s <= steps; s++) {
 
   if (s % 100 === 0 || s === steps) progress(s);
 
-  if (stopOnFibril && chain.every(s => s === STATES.F)) {
-    progress(s);
-    console.log(`\n  Stopped early: 100% fibril at step ${s}`);
-    break;
+  if (stopOnFibril !== null) {
+    const fF = chain.filter(s => s === STATES.F).length / chain.length;
+    if (fF >= stopOnFibril) {
+      progress(s);
+      console.log(`\n  Stopped early: fibril fraction ${fF.toFixed(3)} >= ${stopOnFibril} at step ${s}`);
+      break;
+    }
   }
 }
 

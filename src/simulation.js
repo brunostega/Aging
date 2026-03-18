@@ -80,20 +80,22 @@ export function mcStep(chain, params, T, locked, currentE) {
     if (newState === oldState) continue;
 
     c[idx] = newState;
-    updateRunLen(c, runLen, idx);
+    // Only update runLen when F is involved — otherwise runLen is unchanged
+    const fInvolved = oldState === STATES.F || newState === STATES.F;
+    if (fInvolved) updateRunLen(c, runLen, idx);
 
     const dE = deltaEnergyFast(c, idx, oldState, newState, params, nF, nActiveRuns, runLen);
 
     if (dE > 0 && Math.random() >= Math.exp(-dE / T)) {
       // Reject — revert chain and runLen
       c[idx] = oldState;
-      updateRunLen(c, runLen, idx);
+      if (fInvolved) updateRunLen(c, runLen, idx);
     } else {
       // Accept — update incremental counters
       E += dE;
       if (oldState === STATES.F) nF--;
       if (newState === STATES.F) nF++;
-      nActiveRuns = countActiveRuns(runLen, params.minRun);
+      if (fInvolved) nActiveRuns = countActiveRuns(runLen, params.minRun);
     }
   }
 
