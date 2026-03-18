@@ -1,5 +1,4 @@
 // src/worker.js — MC simulation worker.
-// Runs in a separate thread. Communicates with App.jsx via postMessage.
 //
 // Messages IN (from UI):
 //   { type: "start",  chain, locked, params, T, irreversible, stopOnFibril,
@@ -12,13 +11,13 @@
 // Messages OUT (to UI):
 //   { type: "batch",  chain, locked, E, step, energySum,
 //                     snapshots: [{ step, chain, E }, ...] }
-//   { type: "done" }   — emitted after final batch when stopOnFibril triggers
+//   { type: "done" }
 
 import { STATES, mcStep } from "./simulation.js";
 
 let running = false;
 let sweepsPerBatch = 10;
-let currentState = null;  // shared with params message handler
+let currentState = null;
 
 self.onmessage = (e) => {
   const msg = e.data;
@@ -35,11 +34,10 @@ self.onmessage = (e) => {
   }
 
   if (msg.type === "params") {
-    // Update params and T in the running state so the next batch picks them up
     if (currentState) {
       currentState.params = msg.params;
       currentState.T      = msg.T;
-      currentState.E      = msg.E;  // energy was recomputed on the JS side
+      currentState.E      = msg.E;
     }
     return;
   }
@@ -65,6 +63,7 @@ self.onmessage = (e) => {
   if (msg.type === "start") {
     running = true;
     if (msg.sweepsPerBatch) sweepsPerBatch = msg.sweepsPerBatch;
+    const generation = msg.generation ?? 0;
 
     let state = {
       chain:        msg.chain,
@@ -98,16 +97,16 @@ self.onmessage = (e) => {
 
         if (stopOnFibril && chain.every(s => s === STATES.F)) {
           running = false;
-          postMessage({ type: "batch", chain, locked, E, step, energySum, snapshots });
-          postMessage({ type: "done" });
+          postMessage({ type: "batch", chain, locked, E, step, energySum, snapshots, generation });
+          postMessage({ type: "done", generation });
           return;
         }
       }
 
       state = { ...state, chain, locked, E, step, energySum };
       currentState = state;
-      postMessage({ type: "batch", chain, locked, E, step, energySum, snapshots });
-      setTimeout(loop, 0); // yield so incoming "stop" messages can be processed
+      postMessage({ type: "batch", chain, locked, E, step, energySum, snapshots, generation });
+      setTimeout(loop, 0);
     }
 
     loop();

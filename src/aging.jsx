@@ -115,7 +115,8 @@ export default function App() {
   const [snapCount, setSnapCount]         = useState(0);
   const [seqInput, setSeqInput]           = useState("");
   const [seqError, setSeqError]           = useState(null);
-  const [sweepsPerBatch, setSweepsPerBatch] = useState(10);
+  const [showChain, setShowChain]         = useState(true);
+  const SWEEPS_PER_BATCH = 10;
 
   // Refs for values needed inside the rAF loop without stale closures
   const refs = {
@@ -142,13 +143,17 @@ export default function App() {
   const workerRef      = useRef(null);
   const stepRef        = useRef(0);
   const energySumRef   = useRef(0);
+  const mSumRef        = useRef(0);
+  const dSumRef        = useRef(0);
+  const fSumRef        = useRef(0);
+  const generationRef  = useRef(0);  // incremented on reset to discard stale batches
   const trajectoryRef  = useRef([]);
 
   // ── history / trajectory ──────────────────────────────────────────────────
 
   const pushHistory = useCallback((c, E) => {
     const ct = countStates(c);
-    energySumRef.current += E;
+    // averages accumulated in onmessage for per-snapshot accuracy
     const avgE = energySumRef.current / stepRef.current;
     trajectoryRef.current.push({ step: stepRef.current, chain: [...c], E });
     setSnapCount(trajectoryRef.current.length);
@@ -172,21 +177,30 @@ export default function App() {
   // Create worker once on mount
   useEffect(() => {
     workerRef.current = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+    const gen = generationRef; // capture ref
     workerRef.current.onmessage = (e) => {
       const msg = e.data;
       if (msg.type === "batch") {
-        const { chain: nc, locked: nl, E: newE, step, energySum, snapshots } = msg;
+        // Discard batches from a previous generation (i.e. before last reset)
+        if (msg.generation !== gen.current) return;
+        const { chain: nc, locked: nl, E: newE, step, snapshots } = msg;
         energyRef.current = newE;
-        energySumRef.current = energySum;
         stepRef.current = step;
         setChain(nc);
         setLocked(nl);
         setStep(step);
-        // Push one history point per batch (the last snapshot)
         if (snapshots.length > 0) {
           const last = snapshots[snapshots.length - 1];
+          // Accumulate averages locally — don't trust worker's energySum
+          snapshots.forEach(snap => {
+            energySumRef.current += snap.E;
+            const ct = snap.chain.reduce((a, s) => { a[s]++; return a; }, [0,0,0]);
+            const N = snap.chain.length;
+            mSumRef.current += ct[0] / N;
+            dSumRef.current += ct[1] / N;
+            fSumRef.current += ct[2] / N;
+          });
           pushHistory(last.chain, last.E);
-          // Append all snapshots to trajectory
           for (const snap of snapshots) {
             trajectoryRef.current.push(snap);
           }
@@ -194,13 +208,15 @@ export default function App() {
         }
       }
       if (msg.type === "done") {
+        if (msg.generation !== gen.current) return;
         setRunning(false);
       }
     };
     return () => workerRef.current.terminate();
   }, [pushHistory]);
 
-  // Start/stop worker when running changes
+  // Start worker when running becomes true.
+  // Stop is sent directly by the pause button, reset, and applySequence.
   useEffect(() => {
     if (!workerRef.current) return;
     if (running) {
@@ -215,10 +231,9 @@ export default function App() {
         E:             energyRef.current,
         step:          stepRef.current,
         energySum:     energySumRef.current,
-        sweepsPerBatch,
+        sweepsPerBatch: SWEEPS_PER_BATCH,
+        generation:     generationRef.current,
       });
-    } else {
-      workerRef.current.postMessage({ type: "stop" });
     }
   }, [running]);
 
@@ -236,10 +251,7 @@ export default function App() {
     }
   }, [params, T]);
 
-  // When sweepsPerBatch changes, inform worker
-  useEffect(() => {
-    if (workerRef.current) workerRef.current.postMessage({ type: "config", sweepsPerBatch });
-  }, [sweepsPerBatch]);
+
 
   // ── reset ─────────────────────────────────────────────────────────────────
 
@@ -249,6 +261,7 @@ export default function App() {
       : sizeRef.current;
     sizeRef.current = nn;
     if (inputRef.current) inputRef.current.value = nn;
+    generationRef.current += 1;  // invalidate any in-flight batches
     setRunning(false);
     if (workerRef.current) workerRef.current.postMessage({ type: "stop" });
     const freshChain = initChain(nn);
@@ -257,6 +270,7 @@ export default function App() {
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
     energySumRef.current = 0;
+    mSumRef.current = 0; dSumRef.current = 0; fSumRef.current = 0;
     trajectoryRef.current = [];
     setSnapCount(0);
     setHistory({ M: [], D: [], F: [], E: [], steps: [] });
@@ -271,6 +285,7 @@ export default function App() {
     const nn = parsed.length;
     sizeRef.current = nn;
     if (inputRef.current) inputRef.current.value = nn;
+    generationRef.current += 1;
     setRunning(false);
     if (workerRef.current) workerRef.current.postMessage({ type: "stop" });
     const freshChain = parsed;
@@ -279,6 +294,7 @@ export default function App() {
     setLocked(new Array(nn).fill(false));
     stepRef.current = 0; setStep(0);
     energySumRef.current = 0;
+    mSumRef.current = 0; dSumRef.current = 0; fSumRef.current = 0;
     trajectoryRef.current = [];
     setSnapCount(0);
     setHistory({ M: [], D: [], F: [], E: [], steps: [] });
@@ -348,15 +364,39 @@ export default function App() {
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 10, letterSpacing: 4, color: "#7c3aed", textTransform: "uppercase", marginBottom: 3 }}>
-          Monte Carlo · Metropolis Algorithm
-        </div>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, fontFamily: "'Space Grotesk',sans-serif", letterSpacing: -0.5 }}>
-          1D Protein Aggregation — Ising Model
-        </h1>
-        <div style={{ fontSize: 10, color: "#475569", marginTop: 3 }}>
-          Nearest-neighbour D-D coupling &nbsp;·&nbsp; Cooperative fibril threshold &nbsp;·&nbsp; N={chain.length}
+      <div style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 16 }}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 160" style={{ height: 52, flexShrink: 0 }}>
+          <line x1="20" y1="80" x2="200" y2="80" stroke="#475569" strokeWidth="1.5" opacity="0.35"/>
+          <circle cx="40" cy="80" r="14" fill="#CC79A7" opacity="0.9"/>
+          <line x1="40" y1="66" x2="40" y2="42" stroke="#CC79A7" strokeWidth="2.5"/>
+          <polygon points="40,36 35,46 45,46" fill="#CC79A7"/>
+          <circle cx="88" cy="80" r="14" fill="#CC79A7" opacity="0.9"/>
+          <line x1="88" y1="66" x2="88" y2="42" stroke="#CC79A7" strokeWidth="2.5"/>
+          <polygon points="88,36 83,46 93,46" fill="#CC79A7"/>
+          <circle cx="136" cy="80" r="18" fill="none" stroke="#CC79A7" strokeWidth="1" opacity="0.35"/>
+          <circle cx="136" cy="80" r="14" fill="#CC79A7" opacity="0.9"/>
+          <line x1="136" y1="66" x2="136" y2="42" stroke="#CC79A7" strokeWidth="2.5"/>
+          <polygon points="136,36 131,46 141,46" fill="#CC79A7"/>
+          <path d="M40,58 Q88,28 136,58" fill="none" stroke="#CC79A7" strokeWidth="1" strokeDasharray="3 3" opacity="0.55"/>
+          <text x="88" y="22" textAnchor="middle" fontFamily="'IBM Plex Mono', monospace" fontSize="11" fill="#CC79A7" opacity="0.9">J_F</text>
+          <circle cx="176" cy="80" r="14" fill="#E69F00" opacity="0.85"/>
+          <line x1="169" y1="88" x2="155" y2="62" stroke="#E69F00" strokeWidth="2.5"/>
+          <polygon points="152,57 159,65 165,57" fill="#E69F00" transform="rotate(-30,159,61)"/>
+          <text x="40"  y="112" textAnchor="middle" fontFamily="'IBM Plex Mono', monospace" fontSize="11" fill="#CC79A7">F</text>
+          <text x="88"  y="112" textAnchor="middle" fontFamily="'IBM Plex Mono', monospace" fontSize="11" fill="#CC79A7">F</text>
+          <text x="136" y="112" textAnchor="middle" fontFamily="'IBM Plex Mono', monospace" fontSize="11" fill="#CC79A7">F</text>
+          <text x="176" y="112" textAnchor="middle" fontFamily="'IBM Plex Mono', monospace" fontSize="11" fill="#E69F00">D</text>
+        </svg>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, fontFamily: "'Space Grotesk',sans-serif", letterSpacing: -0.5 }}>
+            <span style={{ color: "#e2e8f0" }}>Ag</span><span style={{ color: "#7c3aed" }}>I</span><span style={{ color: "#e2e8f0" }}>ng</span>
+          </h1>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>
+            Modelling protein aggregation using a 1D Ising model
+          </div>
+          <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+            Monte Carlo · Metropolis &nbsp;·&nbsp; N={chain.length}
+          </div>
         </div>
       </div>
 
@@ -366,15 +406,22 @@ export default function App() {
         <div>
           {/* Chain visualization */}
           <div style={{ background: "#111827", border: "1px solid #1e2d4a", borderRadius: 8, padding: 14, marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: showChain ? 10 : 0 }}>
               <span style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase" }}>
                 Chain — step {step}
               </span>
-              <span style={{ fontSize: 10, color: "#64748b" }}>
-                {fibrilRuns.filter(r => r >= params.minRun).length} active fibril cluster(s)
-              </span>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <span style={{ fontSize: 10, color: "#64748b" }}>
+                  {fibrilRuns.filter(r => r >= params.minRun).length} active fibril cluster(s)
+                </span>
+                <button onClick={() => setShowChain(v => !v)} style={{
+                  background: "none", border: "none", color: "#475569", cursor: "pointer",
+                  fontSize: 10, padding: 0, fontFamily: "inherit", letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}>{showChain ? "▲ hide" : "▼ show"}</button>
+              </div>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+            {showChain && <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
               {chain.map((s, i) => {
                 const isActiveF = s === STATES.F && fibrilRunLength(chain, i) >= params.minRun;
                 const isLocked  = locked[i];
@@ -390,8 +437,8 @@ export default function App() {
                   }} />
                 );
               })}
-            </div>
-            <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
+            </div>}
+            {showChain && <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
               {STATE_NAMES.map((name, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10 }}>
                   <div style={{ width: 9, height: 9, borderRadius: 2, background: STATE_COLORS[i] }} />
@@ -408,15 +455,15 @@ export default function App() {
                   <span style={{ color: "#c084fc" }}>Locked ({locked.filter(Boolean).length})</span>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
 
           {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 14 }}>
             {[
-              { label: "Monomer",    val: `${(counts[0] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[0] },
-              { label: "Disordered", val: `${(counts[1] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[1] },
-              { label: "Fibril",     val: `${(counts[2] / chain.length * 100).toFixed(0)}%`, col: STATE_COLORS[2] },
+              { label: "⟨M⟩",        val: step > 0 ? `${(mSumRef.current / step * 100).toFixed(0)}%` : "—", col: STATE_COLORS[0] },
+              { label: "⟨D⟩",        val: step > 0 ? `${(dSumRef.current / step * 100).toFixed(0)}%` : "—", col: STATE_COLORS[1] },
+              { label: "⟨F⟩",        val: step > 0 ? `${(fSumRef.current / step * 100).toFixed(0)}%` : "—", col: STATE_COLORS[2] },
               { label: "Active F",   val: `${(activeFibrilFrac * 100).toFixed(0)}%`,          col: "#c084fc" },
               { label: "Avg Energy", val: step > 0 ? (energySumRef.current / step).toFixed(1) : "—",  col: "#818cf8" },
             ].map(({ label, val, col }) => (
@@ -436,7 +483,7 @@ export default function App() {
               { key: "M", color: STATE_COLORS[0], label: "Monomer",         xAxis: false },
               { key: "D", color: STATE_COLORS[1], label: "Disordered",      xAxis: false },
               { key: "F", color: STATE_COLORS[2], label: "Fibril",          xAxis: false },
-              { key: "E", color: "#818cf8",        label: "Energy (instant)", xAxis: true  },
+              { key: "E", color: "#818cf8",       label: "Energy",          xAxis: true  },
             ].map(({ key, color, label, xAxis }) => (
               <div key={key} style={{ marginBottom: 5 }}>
                 <div style={{ fontSize: 9, color: color, marginBottom: 1 }}>{label}</div>
@@ -448,7 +495,10 @@ export default function App() {
           {/* Buttons */}
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {[
-              { label: running ? "⏸ Pause" : "▶ Run", fn: () => setRunning(r => !r),
+              { label: running ? "⏸ Pause" : "▶ Run", fn: () => {
+                  if (running && workerRef.current) workerRef.current.postMessage({ type: "stop" });
+                  setRunning(r => !r);
+                },
                 bg: running ? "#7f1d1d" : "#1e3a5f", bdr: running ? "#ef4444" : "#3b82f6", col: running ? "#fca5a5" : "#93c5fd" },
               { label: "Step",  fn: doStep,         bg: "#1a1f35", bdr: "#374151", col: "#94a3b8", dis: running },
               { label: "Reset", fn: reset,          bg: "#1a1f35", bdr: "#374151", col: "#94a3b8" },
@@ -575,21 +625,6 @@ export default function App() {
               ? <div style={{ fontSize: 9, color: "#f87171", marginTop: 5 }}>{seqError}</div>
               : <div style={{ fontSize: 9, color: "#374151", marginTop: 5 }}>M · D · F — Enter or Apply</div>
             }
-          </div>
-
-          {/* Sweeps per batch */}
-          <div style={{ background: "#111827", border: "1px solid #1e2d4a", borderRadius: 8, padding: 14, marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Sweeps per frame</div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 11, color: "#94a3b8" }}>batch size</span>
-              <span style={{ fontSize: 14, color: "#94a3b8", fontWeight: 600 }}>{sweepsPerBatch}</span>
-            </div>
-            <input type="range" min={1} max={200} step={1} value={sweepsPerBatch}
-              onChange={e => setSweepsPerBatch(parseInt(e.target.value))}
-              style={{ accentColor: "#64748b" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#475569", marginTop: 2 }}>
-              <span>slower / smoother</span><span>faster</span>
-            </div>
           </div>
 
           {/* Temperature */}
