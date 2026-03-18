@@ -1,8 +1,8 @@
-# Aging
+# AgIng
 
 A 1D Ising-like Monte Carlo simulation of protein aggregation, running live in the browser.
 
-Each site on a linear chain represents a protein monomer that can exist in one of three states: **Monomer**, **Disordered Oligomer**, or **Fibril**. The system evolves via the Metropolis algorithm, and you can watch nucleation, aggregation, and phase-like transitions unfold in real time.
+Each site on a linear chain represents a protein that can exist in one of three states: **Monomer**, **Disordered Oligomer**, or **Fibril**. The system evolves via the Metropolis algorithm, and you can watch nucleation, aggregation, and phase-like transitions unfold in real time.
 
 ## Live Demo
 
@@ -14,10 +14,10 @@ Each site on a linear chain represents a protein monomer that can exist in one o
 
 ### States
 
-| State | Color | Description |
+| State | Colour | Description |
 |---|---|---|
 | Monomer (M) | 🔵 Sky blue | Free, soluble protein |
-| Disordered Oligomer (D) | 🟠 Orange | Loosely associated aggregate |
+| Disordered Oligomer (D) | 🟠 Orange | Loosely associated, unstructured aggregate |
 | Fibril (F) | 🩷 Pink-violet | Ordered amyloid-like aggregate — stabilised by cooperative interactions |
 
 ### Hamiltonian
@@ -25,23 +25,22 @@ Each site on a linear chain represents a protein monomer that can exist in one o
 ```
 H = Σᵢ εₛᵢ
   − J_D  Σ⟨i,j⟩  δ(D,D)
-  − J_F  Σ⟨i,j⟩  δ(F,F) · 1[run ≥ minRun]
-  − h_FF · N_F   · 1[exists active run]
+  − J_F  Σ⟨i,j⟩  δ(F,F) · 𝟙[run ≥ minRun]
+  − h_FF · N_F   · 𝟙[∃ active run]
 ```
 
-- **εₛ** — intrinsic energy of each state
-- **J_D** — disordered oligomer coupling: nearest neighbours only
-- **J_F** — short-range fibril coupling: nearest neighbours, active only when both sites belong to a contiguous run of length ≥ `minRun`
-- **h_FF** — background field acting on all fibril sites once at least one active run exists anywhere on the chain; models the catalytic effect of an established fibril nucleus on the rest of the chain
+- **εₛ** — intrinsic energy of each state (eM, eD, eF)
+- **J_D** — disordered nearest-neighbour coupling: two adjacent D sites lower energy
+- **J_F** — fibril nearest-neighbour coupling: active only when both sites belong to a contiguous run of length ≥ `minRun` (cooperative nucleation)
+- **h_FF** — background field that lowers the energy of every fibril site once at least one active run exists anywhere on the chain (secondary nucleation / seeding)
 
 ### Key physics
 
-**Cooperative fibril nucleation** — fibril coupling is gated by a minimum run length (`minRun`). Isolated fibril sites gain no stabilisation energy, so nucleation requires building a critical seed before the fibril state becomes thermodynamically favourable. This mimics the nucleation barrier seen in amyloid formation.
+**Competition between aggregation pathways** — disordered oligomers form freely at any size, while fibril coupling is gated by a minimum run length. At intermediate temperatures the system can become trapped in a disordered phase rather than reaching the fibril state, reflecting the experimental observation that disordered aggregates can kinetically compete with amyloid formation.
 
-**Catalytic background field** — once any active fibril run forms, `h_FF` lowers the energy of every fibril site on the chain regardless of its local context. This captures secondary nucleation and seeding: an established fibril template changes the free-energy landscape for the whole chain. The field is O(N) and avoids the O(N²) cost of explicit pairwise long-range couplings.
+**Cooperative fibril nucleation** — isolated fibril sites gain no stabilisation from J_F, so nucleation requires assembling a critical seed of size `minRun` before the fibril state becomes thermodynamically favourable.
 
-**Competition between aggregation pathways** — the model captures the off-pathway competition between disordered oligomers and fibrils that is central to amyloid disease biology. Both states are stabilised by nearest-neighbour coupling (J_D and J_F respectively), but they differ fundamentally in character: disordered oligomers form freely at any size and concentration, while fibril coupling is gated by a nucleation threshold. At intermediate temperatures and coupling strengths the system can become trapped in a disordered oligomeric phase rather than reaching the fibril state, reflecting the experimental observation that disordered aggregates can act as kinetic competitors to amyloid formation. The balance between the two pathways is controlled by the interplay of intrinsic energies (ε_D vs ε_F), coupling strengths (J_D vs J_F), temperature, and the nucleation barrier (minRun).
-
+**Catalytic background field** — once any active run forms, `h_FF` lowers the energy of every fibril site regardless of local context. This captures secondary nucleation and seeding: an established fibril template changes the free-energy landscape for the whole chain. The field is O(N) and avoids the O(N²) cost of explicit pairwise long-range couplings.
 
 **Irreversible fibril mode** — an optional toggle locks any fibril site once it joins an active run, preventing reversion. This captures kinetic trapping of mature amyloid cores.
 
@@ -53,7 +52,7 @@ All energy parameters share the range **0–8**.
 
 | Parameter | Description |
 |---|---|
-| Chain length N | Number of monomers (10–300) |
+| Chain length N | Number of monomers (10–10000) |
 | k_B T | Temperature — controls the scale of thermal fluctuations |
 | E_Monomer | Intrinsic energy of the monomer state |
 | E_Disordered | Intrinsic energy of the disordered oligomer state |
@@ -77,8 +76,7 @@ Clicking **Save (n)** downloads a JSON file containing every recorded snapshot:
     "n": 80,
     "totalSteps": 342,
     "snapshots": 342,
-    "params": { "eM": 0, "eD": 1.5, "eF": 3.0, "jD": 1.2, "jF": 2.5, "hFF": 0.5, "minRun": 3, "T": 1.0 },
-    "states": { "0": "Monomer", "1": "Disordered", "2": "Fibril" }
+    "params": { "eM": 0, "eD": 1.5, "eF": 3.0, "jD": 1.2, "jF": 2.5, "hFF": 0.5, "minRun": 3, "T": 1.0 }
   },
   "trajectory": [
     { "step": 1, "chain": [0, 0, 2, 0, 1], "E": 12.4 },
@@ -87,7 +85,7 @@ Clicking **Save (n)** downloads a JSON file containing every recorded snapshot:
 }
 ```
 
-Each entry contains the step index, the full chain as an array of integers (0 = Monomer, 1 = Disordered, 2 = Fibril), and the total energy. The buffer is cleared on Reset.
+Each entry contains the step index, the full chain as an integer array (0 = Monomer, 1 = Disordered, 2 = Fibril), and the instantaneous energy. The buffer is cleared on Reset.
 
 ---
 
@@ -114,7 +112,7 @@ sudo port install nodejs22 npm10
 
 ## Command-line interface
 
-The simulation can be run headlessly from the terminal, writing the time trace and full trajectory to TSV files on the fly.
+The simulation can be run headlessly from the terminal, writing the time trace and full trajectory to TSV files incrementally.
 
 ```bash
 node aging-cli.js [options]
@@ -134,7 +132,7 @@ node aging-cli.js [options]
 | `--hFF N` | 3.5 | h_FF background field |
 | `--minRun N` | 3 | Min fibril run length |
 | `--irreversible` | off | Enable irreversible fibril locking |
-| `--stopOnFibril` | off | Stop when chain reaches 100% fibril |
+| `--stopOnFibril F` | off | Stop when fibril fraction reaches F ∈ (0, 1] (default 1.0 if flag given without value) |
 | `--trace FILE` | trace.tsv | Time trace output file |
 | `--traj FILE` | trajectory.tsv | Trajectory output file |
 | `--help` | — | Show usage |
@@ -146,7 +144,6 @@ Both output files are written incrementally — safe to inspect mid-run with `ta
 step  fM      fD      fF      fActiveF  E        avgE
 0     1.0000  0.0000  0.0000  0.0000    80.0000  80.0000
 1     0.9875  0.0125  0.0000  0.0000    79.5000  79.7500
-...
 ```
 
 **trajectory.tsv** — one row per step, chain encoded as a string of M/D/F characters:
@@ -154,16 +151,20 @@ step  fM      fD      fF      fActiveF  E        avgE
 step  chain           E
 0     MMMMMMMM...     80.0000
 1     MMDMMMMD...     79.5000
-...
 ```
 
-Example — run 5000 steps at low temperature starting from all monomers:
+Examples:
 ```bash
-node aging-cli.js --steps 5000 --n 100 --T 0.5 --jF 3.0 --hFF 1.0 --stopOnFibril
-```
+# Run 5000 steps at low temperature
+node aging-cli.js --steps 5000 --n 100 --T 0.5 --jF 3.0 --hFF 1.0
 
-Or via npm:
-```bash
+# Stop as soon as 80% of sites are fibril
+node aging-cli.js --steps 10000 --stopOnFibril 0.8
+
+# Stop at 100% fibril (shorthand)
+node aging-cli.js --steps 10000 --stopOnFibril
+
+# Via npm
 npm run cli -- --steps 5000 --T 0.5
 ```
 
@@ -171,16 +172,20 @@ npm run cli -- --steps 5000 --T 0.5
 
 ## Tests
 
-The energy functions and MC engine are covered by a suite of regression tests using [Vitest](https://vitest.dev). All tests are single-point energy calculations with hand-verified expected values — fully deterministic, no MC randomness.
+The model and MC engine are covered by a regression suite using [Vitest](https://vitest.dev). All tests use hand-verified expected values — deterministic, no MC randomness except the low-temperature energy test.
 
 ```bash
 npm test
 ```
 
-Tests live in `tests/aging.test.js` and cover:
+Tests in `tests/aging.test.js` cover:
 
-- `fibrilRunLength` — boundary cases and run detection
-- `computeEnergy` — intrinsic energies, D-D coupling, F-F short-range coupling, `h_FF` background field (firing conditions, sub-threshold sites, multiple runs)
+- `fibrilRunLength` — boundary cases, run detection, non-fibril sites
+- `computeEnergy` — intrinsic energies, D-D coupling, F-F short-range coupling, `h_FF` background field (firing conditions, sub-threshold sites, two-run cases)
+- `buildRunLen` — correct lengths for all-monomer, single fibril, contiguous runs, and multiple runs
+- `countActiveRuns` — threshold detection including sub-threshold runs
+- `updateRunLen` — correctness after split, merge, extension, shrink, and long-run cases
+- `deltaEnergyFast` — exact consistency with `computeEnergy` for 17+ flip cases covering M↔D, M↔F, D↔F, boundary conditions, and h_FF transitions
 - `mcStep` — chain length preservation, irreversible locking, energy non-increase at low temperature
 
 The CI workflow (`.github/workflows/test.yml`) runs the suite on every push and pull request.
@@ -213,12 +218,13 @@ Aging/
 │   ├── deploy.yml       # deploy to GitHub Pages on push to main
 │   └── test.yml         # run test suite on push and pull request
 ├── src/
-│   ├── model.js         # pure energy functions (computeEnergy, fibrilRunLength)
-│   ├── simulation.js    # MC engine, helpers, constants
+│   ├── model.js         # Hamiltonian, energy functions, runLen cache
+│   ├── simulation.js    # MC engine (mcStep), chain helpers, constants
+│   ├── worker.js        # Web Worker owning the MC loop
 │   ├── aging.jsx        # React UI
 │   └── main.jsx         # entry point
 ├── tests/
-│   └── aging.test.js    # regression tests
+│   └── aging.test.js    # Vitest regression suite
 ├── aging-cli.js         # headless CLI runner
 ├── index.html
 ├── package.json
@@ -231,8 +237,8 @@ Aging/
 ## Stack
 
 - [React 18](https://react.dev) — UI and state management
-- [Vite](https://vitejs.dev) + [Vitest](https://vitest.dev) — build tooling and testing
-- Vanilla JS — Monte Carlo engine, no simulation libraries
+- [Vite 5](https://vitejs.dev) + [Vitest 1](https://vitest.dev) — build tooling and testing
+- Vanilla JS — MC engine (no runtime dependencies)
 
 ---
 
