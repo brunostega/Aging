@@ -1,39 +1,36 @@
 // src/worker.js — MC simulation worker.
 //
-// Messages IN (from UI):
+// The worker owns the simulation loop so the main thread stays responsive.
+// Each batch runs SWEEPS_PER_BATCH sweeps, then posts results and yields via
+// setTimeout(loop, 0) so the browser can process UI events between batches.
+//
+// Messages IN  (from UI):
 //   { type: "start",  chain, locked, params, T, irreversible, stopOnFibril,
-//                     E, step, energySum, sweepsPerBatch }
+//                     E, step, sweepsPerBatch, generation }
 //   { type: "stop" }
-//   { type: "step",   chain, locked, params, T, irreversible, E, step, energySum }
-//   { type: "config", sweepsPerBatch }
+//   { type: "step",   chain, locked, params, T, irreversible, E, step, generation }
 //   { type: "params", params, T, E }
 //
 // Messages OUT (to UI):
-//   { type: "batch",  chain, locked, E, step, energySum,
-//                     snapshots: [{ step, chain, E }, ...] }
-//   { type: "done" }
+//   { type: "batch", chain, locked, E, step, snapshots: [{step, chain, E}], generation }
+//   { type: "done",  generation }
 
 import { STATES, mcStep } from "./simulation.js";
 
-let running = false;
-let sweepsPerBatch = 10;
-let currentState = null;
+let running       = false;
+let currentState  = null;
 
 self.onmessage = (e) => {
   const msg = e.data;
 
   if (msg.type === "stop") {
-    running = false;
+    running      = false;
     currentState = null;
     return;
   }
 
-  if (msg.type === "config") {
-    sweepsPerBatch = msg.sweepsPerBatch;
-    return;
-  }
-
   if (msg.type === "params") {
+    // Hot-swap params/T without stopping — E is recomputed on the main thread
     if (currentState) {
       currentState.params = msg.params;
       currentState.T      = msg.T;
@@ -43,27 +40,26 @@ self.onmessage = (e) => {
   }
 
   if (msg.type === "step") {
-    const { params, T, irreversible } = msg;
-    const activeLocked = irreversible ? msg.locked : null;
-    const result = mcStep(msg.chain, params, T, activeLocked, msg.E);
-    const step = msg.step + 1;
-    const energySum = msg.energySum + result.E;
+    // Single-step from paused state
+    const activeLocked = msg.irreversible ? msg.locked : null;
+    const result = mcStep(msg.chain, msg.params, msg.T, activeLocked, msg.E);
+    const step   = msg.step + 1;
     postMessage({
-      type: "batch",
-      chain: result.chain,
-      locked: result.locked,
-      E: result.E,
+      type:      "batch",
+      chain:     result.chain,
+      locked:    result.locked,
+      E:         result.E,
       step,
-      energySum,
       snapshots: [{ step, chain: result.chain.slice(), E: result.E }],
+      generation: msg.generation ?? 0,
     });
     return;
   }
 
   if (msg.type === "start") {
     running = true;
-    if (msg.sweepsPerBatch) sweepsPerBatch = msg.sweepsPerBatch;
-    const generation = msg.generation ?? 0;
+    const generation     = msg.generation ?? 0;
+    const sweepsPerBatch = msg.sweepsPerBatch ?? 10;
 
     let state = {
       chain:        msg.chain,
@@ -74,7 +70,6 @@ self.onmessage = (e) => {
       stopOnFibril: msg.stopOnFibril,
       E:            msg.E,
       step:         msg.step,
-      energySum:    msg.energySum,
     };
     currentState = state;
 
@@ -82,7 +77,7 @@ self.onmessage = (e) => {
       if (!running) return;
 
       const { params, T, irreversible, stopOnFibril } = state;
-      let { chain, locked, E, step, energySum } = state;
+      let   { chain, locked, E, step }                = state;
       const snapshots = [];
 
       for (let i = 0; i < sweepsPerBatch; i++) {
@@ -92,20 +87,24 @@ self.onmessage = (e) => {
         locked = result.locked;
         E      = result.E;
         step  += 1;
-        energySum += E;
         snapshots.push({ step, chain: chain.slice(), E });
 
-        if (stopOnFibril && chain.every(s => s === STATES.F)) {
-          running = false;
-          postMessage({ type: "batch", chain, locked, E, step, energySum, snapshots, generation });
-          postMessage({ type: "done", generation });
-          return;
+        // Stop early if the requested fibril fraction has been reached
+        if (stopOnFibril) {
+          let nF = 0;
+          for (let j = 0; j < chain.length; j++) if (chain[j] === STATES.F) nF++;
+          if (nF / chain.length >= 1.0) {
+            running = false;
+            postMessage({ type: "batch", chain, locked, E, step, snapshots, generation });
+            postMessage({ type: "done",  generation });
+            return;
+          }
         }
       }
 
-      state = { ...state, chain, locked, E, step, energySum };
+      state        = { ...state, chain, locked, E, step };
       currentState = state;
-      postMessage({ type: "batch", chain, locked, E, step, energySum, snapshots, generation });
+      postMessage({ type: "batch", chain, locked, E, step, snapshots, generation });
       setTimeout(loop, 0);
     }
 

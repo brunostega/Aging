@@ -4,7 +4,7 @@ import {
   DEFAULT_N, DEFAULT_PARAMS, MIN_N, MAX_N,
   initChain, parseChain, countStates, fibrilRunLengths,
 } from "./simulation.js";
-import { computeEnergy, fibrilRunLength } from "./model.js";
+import { computeEnergy, fibrilRunLength, buildRunLen } from "./model.js";
 
 // ── Sparkline ───────────────────────────────────────────────────────────────
 
@@ -94,7 +94,6 @@ const PARAM_CONFIG = [
   { key: "minRun", label: "Min Fibril Run",      min: 2, max: 8, step: 1,   col: "#c084fc",       desc: "Min run length to activate J_F" },
 ];
 
-
 const MAX_HIST     = 400;  // max samples kept per series
 const PRUNE_TARGET = 200;  // downsample to this size when MAX_HIST is reached
 
@@ -107,6 +106,8 @@ function downsample(a, targetLen) {
 }
 
 // ── App ─────────────────────────────────────────────────────────────────────
+
+const SWEEPS_PER_BATCH = 10;  // sweeps per worker batch
 
 export default function App() {
   const [params, setParams]               = useState(DEFAULT_PARAMS);
@@ -122,7 +123,6 @@ export default function App() {
   const [seqInput, setSeqInput]           = useState("");
   const [seqError, setSeqError]           = useState(null);
   const [showChain, setShowChain]         = useState(true);
-  const SWEEPS_PER_BATCH = 10;
 
   // Refs for values needed inside the rAF loop without stale closures
   const refs = {
@@ -253,8 +253,6 @@ export default function App() {
     }
   }, [params, T]);
 
-
-
   // ── reset ─────────────────────────────────────────────────────────────────
 
   const reset = (n) => {
@@ -307,15 +305,15 @@ export default function App() {
   const doStep = () => {
     if (running) return;
     workerRef.current.postMessage({
-      type:         "step",
-      chain:        refs.chain.current,
-      locked:       refs.locked.current,
-      params:       refs.params.current,
-      T:            refs.T.current,
+      type:        "step",
+      chain:       refs.chain.current,
+      locked:      refs.locked.current,
+      params:      refs.params.current,
+      T:           refs.T.current,
       irreversible: refs.irreversible.current,
-      E:            energyRef.current,
-      step:         stepRef.current,
-      energySum:    energySumRef.current,
+      E:           energyRef.current,
+      step:        stepRef.current,
+      generation:  generationRef.current,
     });
   };
 
@@ -345,9 +343,8 @@ export default function App() {
 
   // ── derived display values ────────────────────────────────────────────────
 
-  const counts          = countStates(chain);
-  const E               = computeEnergy(chain, params);
-  const fibrilRuns      = useMemo(() => fibrilRunLengths(chain), [chain]);
+  const counts     = useMemo(() => countStates(chain), [chain]);
+  const fibrilRuns = useMemo(() => fibrilRunLengths(chain), [chain]);
   const activeFibrilCount = fibrilRuns.filter(r => r >= params.minRun).reduce((a, r) => a + r, 0);
   const activeFibrilFrac  = counts[2] > 0 ? activeFibrilCount / counts[2] : 0;
 
@@ -423,23 +420,30 @@ export default function App() {
                 }}>{showChain ? "▲ hide" : "▼ show"}</button>
               </div>
             </div>
-            {showChain && <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-              {chain.map((s, i) => {
-                const isActiveF = s === STATES.F && fibrilRunLength(chain, i) >= params.minRun;
-                const isLocked  = locked[i];
-                return (
-                  <div key={i} title={`${i}: ${STATE_NAMES[s]}${isLocked ? " [locked]" : ""}`} style={{
-                    width: 10, height: 26, borderRadius: 2, flexShrink: 0,
-                    background: STATE_COLORS[s],
-                    opacity: s === STATES.F ? (isActiveF ? 1 : 0.28) : 0.82,
-                    boxShadow: isLocked
-                      ? "0 0 6px #a855f7, inset 0 0 3px #a855f744"
-                      : isActiveF ? `0 0 5px ${STATE_COLORS[2]}99` : "none",
-                    outline: isLocked ? "1px solid #a855f788" : "none",
-                  }} />
-                );
-              })}
-            </div>}
+            {showChain && (() => {
+              // Build runLen once — O(N) — instead of calling fibrilRunLength
+              // per F site which would be O(N × runLength).
+              const runLen = buildRunLen(chain);
+              return (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                  {chain.map((s, i) => {
+                    const isActiveF = s === STATES.F && runLen[i] >= params.minRun;
+                    const isLocked  = locked[i];
+                    return (
+                      <div key={i} title={`${i}: ${STATE_NAMES[s]}${isLocked ? " [locked]" : ""}`} style={{
+                        width: 10, height: 26, borderRadius: 2, flexShrink: 0,
+                        background: STATE_COLORS[s],
+                        opacity: s === STATES.F ? (isActiveF ? 1 : 0.28) : 0.82,
+                        boxShadow: isLocked
+                          ? "0 0 6px #a855f7, inset 0 0 3px #a855f744"
+                          : isActiveF ? `0 0 5px ${STATE_COLORS[2]}99` : "none",
+                        outline: isLocked ? "1px solid #a855f788" : "none",
+                      }} />
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {showChain && <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
               {STATE_NAMES.map((name, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10 }}>

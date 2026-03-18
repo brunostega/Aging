@@ -137,7 +137,6 @@ describe("computeEnergy — mixed states", () => {
   });
 });
 
-
 describe("computeEnergy — hFF background field", () => {
   it("hFF does not fire when no active run exists", () => {
     // [F,F,M,F]: runs of 2 and 1, minRun=3 — no active run, no hFF
@@ -203,10 +202,6 @@ describe("deltaEnergy — exact consistency with computeEnergy", () => {
     });
   });
 });
-
-
-
-
 
 // ── buildRunLen ────────────────────────────────────────────────────────────
 
